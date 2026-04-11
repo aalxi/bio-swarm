@@ -16,7 +16,11 @@ def create_sandbox(language: str = "python"):
     """Create a new sandbox. Returns the sandbox object. Caller must delete it."""
     daytona = _get_client()
     image = Image.debian_slim("3.11")
-    sandbox = daytona.create(CreateSandboxFromImageParams(image=image, language=language))
+    sandbox = daytona.create(
+        CreateSandboxFromImageParams(image=image, language=language),
+        timeout=300,
+        on_snapshot_create_logs=lambda msg: print(f"[daytona build] {msg}", flush=True),
+    )
     return daytona, sandbox
 
 
