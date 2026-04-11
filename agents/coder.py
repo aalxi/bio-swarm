@@ -185,13 +185,25 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
     global _stage_start
     _stage_start = time.monotonic()
 
-    _log("Creating Daytona sandbox (Python 3.11)...")
+    UV = "/usr/local/py-utils/bin/uv"
+    VENV = "/home/daytona/venv311"
+
+    _log("Creating Daytona sandbox...")
     daytona, sandbox = daytona_tool.create_sandbox(language="python")
     _log(f"Sandbox created: {getattr(sandbox, 'id', sandbox)}")
     try:
-        _log("Running: pip install opentrons (timeout=180s)...")
+        _log("Installing Python 3.11 via uv (timeout=120s)...")
+        uv_py = daytona_tool.run_cmd(sandbox, f"{UV} python install 3.11", timeout=120)
+        _log(f"uv python install exit_code={uv_py['exit_code']} success={uv_py['success']}")
+        _log(f"uv python install stdout:\n{(uv_py['stdout'] or '')[-500:]}")
+
+        _log("Creating Python 3.11 venv...")
+        uv_venv = daytona_tool.run_cmd(sandbox, f"{UV} venv --python 3.11 {VENV}", timeout=60)
+        _log(f"uv venv exit_code={uv_venv['exit_code']} success={uv_venv['success']}")
+
+        _log("Running: uv pip install opentrons into venv (timeout=180s)...")
         pip = daytona_tool.run_cmd(
-            sandbox, "pip install opentrons", timeout=180
+            sandbox, f"{UV} pip install --python {VENV} opentrons", timeout=180
         )
         _log(f"pip install exit_code={pip['exit_code']} success={pip['success']}")
         _log(f"pip stdout tail:\n{(pip['stdout'] or '')[-1000:]}")
@@ -207,10 +219,10 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
         for attempt in range(WET_LAB_MAX_SIM_ATTEMPTS):
             _log(f"Uploading protocol.py to sandbox (attempt {attempt + 1}/{WET_LAB_MAX_SIM_ATTEMPTS})...")
             daytona_tool.upload_file(sandbox, script, "/home/daytona/protocol.py")
-            _log("Running: opentrons_simulate /home/daytona/protocol.py (timeout=120s)...")
+            _log(f"Running: {VENV}/bin/opentrons_simulate (timeout=120s)...")
             sim = daytona_tool.run_cmd(
                 sandbox,
-                "opentrons_simulate /home/daytona/protocol.py",
+                f"{VENV}/bin/opentrons_simulate /home/daytona/protocol.py",
                 timeout=120,
             )
             last_sim_out = sim["stdout"] or ""

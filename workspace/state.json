@@ -1,22 +1,22 @@
 {
-  "task_id": "93c155df",
+  "task_id": "38595e83",
   "mode": "wet_lab",
   "user_input": "Serial dilution protocol for antimicrobial susceptibility testing (broth microdilution method, CLSI M07)\n",
-  "status": "coding",
+  "status": "error",
   "research": {
     "done": true,
     "files": [
-      "workspace/raw_research/93c155df_search_0.json",
-      "workspace/raw_research/93c155df_search_1.json",
-      "workspace/raw_research/93c155df_search_2.json",
-      "workspace/raw_research/93c155df_extracted.json",
-      "workspace/raw_research/93c155df_combined.json"
+      "workspace/raw_research/38595e83_search_0.json",
+      "workspace/raw_research/38595e83_search_1.json",
+      "workspace/raw_research/38595e83_search_2.json",
+      "workspace/raw_research/38595e83_extracted.json",
+      "workspace/raw_research/38595e83_combined.json"
     ],
     "sources": []
   },
   "extraction": {
     "done": true,
-    "protocol_file": "workspace/extracted_protocols/protocol_93c155df.json",
+    "protocol_file": "workspace/extracted_protocols/protocol_38595e83.json",
     "schema_valid": true
   },
   "coding": {
@@ -30,5 +30,7 @@
     "done": false,
     "report_file": null
   },
-  "errors": []
+  "errors": [
+    "Coder agent crashed"
+  ]
 }

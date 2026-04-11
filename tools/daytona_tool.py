@@ -1,5 +1,5 @@
 import os
-from daytona import Daytona, DaytonaConfig, CreateSandboxFromImageParams, Image
+from daytona import Daytona, DaytonaConfig, CreateSandboxBaseParams
 
 
 def _get_client() -> Daytona:
@@ -15,12 +15,7 @@ def _get_client() -> Daytona:
 def create_sandbox(language: str = "python"):
     """Create a new sandbox. Returns the sandbox object. Caller must delete it."""
     daytona = _get_client()
-    image = Image.debian_slim("3.11")
-    sandbox = daytona.create(
-        CreateSandboxFromImageParams(image=image, language=language),
-        timeout=300,
-        on_snapshot_create_logs=lambda msg: print(f"[daytona build] {msg}", flush=True),
-    )
+    sandbox = daytona.create(CreateSandboxBaseParams(language=language))
     return daytona, sandbox
 
 
@@ -70,6 +65,6 @@ def clone_repo(sandbox, url: str, dest_path: str = "/home/daytona/repo"):
 def cleanup(daytona, sandbox):
     """Always call this after a sandbox is done — avoids leaving billable sandboxes running."""
     try:
-        daytona.remove(sandbox)
+        daytona.delete(sandbox)
     except Exception:
         pass
