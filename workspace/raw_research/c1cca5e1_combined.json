@@ -1,0 +1,32 @@
+{
+  "task_id": "c1cca5e1",
+  "mode": "wet_lab",
+  "user_input": "Serial dilution protocol for antimicrobial susceptibility testing (broth microdilution method, CLSI M07)\n",
+  "queries": [
+    "CLSI M07 broth microdilution serial dilution protocol antimicrobial susceptibility testing full text PDF methodology",
+    "broth microdilution antimicrobial susceptibility testing serial two-fold dilution protocol cation-adjusted Mueller-Hinton broth inoculum preparation CLSI M07",
+    "CLSI M07 Enterobacterales Staphylococcus aureus broth microdilution MIC protocol plate setup incubation reading results"
+  ],
+  "all_sources": [
+    "https://www.slideshare.net/slideshow/m07-a10-methods-for-dilution-antimicrobial-susceptibility-tests-for-bacteria-that-grow-aerobically-10th-edition-jean-b-pate/280639424",
+    "https://scacm.org/2025_Spring/Handouts/362-112-25-1perPg_HANDOUT-AST_Workshop.pdf",
+    "https://www.liofilchem.net/login/pd/ifu/27510_IFU.pdf",
+    "https://clsi.org/shop/standards/m07/",
+    "https://www.nih.org.pk/wp-content/uploads/2021/02/CLSI-2020.pdf",
+    "https://www.biomerieux.com/content/dam/biomerieux-com/medical-affairs/microbiology/new-ast/biomerieux-AST-BOOKLET-2024-FINAL.pdf",
+    "https://clsjournal.ascls.org/content/25/4/233.full-text.pdf",
+    "https://www.testinglab.com/clsi-m07-dilution-methods-for-antimicrobial-susceptibility-testing",
+    "https://www.sciencedirect.com/topics/immunology-and-microbiology/broth-dilution",
+    "https://pmc.ncbi.nlm.nih.gov/articles/PMC8218745/",
+    "https://www.seco.us/ASSETS/DOCUMENTS/ITEMS/EN/212322.pdf?srsltid=AfmBOorrJOfXXYgsEqXDTk6Re-B-atFQrt4SZT5RJwRVI_3AazPJuJpw",
+    "https://www.protocols.io/view/minimum-inhibitory-concentration-mic-and-minimum-b-cvpyw5pw.pdf"
+  ],
+  "result_count": 15,
+  "extraction_url": "https://clsi.org/shop/standards/m07/",
+  "output_files": [
+    "workspace/raw_research/c1cca5e1_search_0.json",
+    "workspace/raw_research/c1cca5e1_search_1.json",
+    "workspace/raw_research/c1cca5e1_search_2.json",
+    "workspace/raw_research/c1cca5e1_extracted.json"
+  ]
+}

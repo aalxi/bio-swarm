@@ -1,0 +1,147 @@
+{
+  "protocol_name": "Broth microdilution antimicrobial susceptibility testing (CLSI M07-based)",
+  "paper_source": "Methods for Dilution Antimicrobial Susceptibility Tests for Bacteria That Grow Aerobically; Approved Standard\u2014Eighth Edition (CLSI M07-A8, 2009)",
+  "labware_setup": [
+    "opentrons_96_wellplate_200ul_pcr_full_skirt",
+    "opentrons_10_tuberack_falcon_4x50ml_6x15ml_conical"
+  ],
+  "pipettes": [
+    "p300_single_gen2",
+    "p20_single_gen2",
+    "p300_multi_gen2"
+  ],
+  "reagents": [
+    "cation-adjusted Mueller-Hinton broth (CAMHB)",
+    "Mueller-Hinton broth",
+    "antimicrobial agent stock solutions",
+    "sterile diluent",
+    "sterile saline",
+    "sterile water",
+    "tryptic soy broth",
+    "bacterial inoculum suspension",
+    "quality control organism"
+  ],
+  "sequential_steps": [
+    {
+      "step_number": 1,
+      "action": "transfer",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Prepare antimicrobial agent stock solution at at least 1000 ug/mL or at least 10 times the highest concentration to be tested, using the manufacturer-indicated solvent."
+    },
+    {
+      "step_number": 2,
+      "action": "distribute",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Prepare successive two-fold intermediate antimicrobial dilutions (eg 1:2, 1:4, 1:8) in sterile diluent/broth or sterile water."
+    },
+    {
+      "step_number": 3,
+      "action": "distribute",
+      "volume_ul": 100.0,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Dispense antimicrobial-broth solutions into a 96-well microdilution tray so each well contains 0.1 mL broth. Exact well map for concentration series is not provided."
+    },
+    {
+      "step_number": 4,
+      "action": "transfer",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Prepare bacterial inoculum from 3-5 well-isolated colonies from a pure overnight culture into 4-5 mL suitable broth such as tryptic soy broth."
+    },
+    {
+      "step_number": 5,
+      "action": "incubate",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": 35.0,
+      "notes": "Incubate broth culture at 35 +/- 2 C until it achieves or exceeds 0.5 McFarland turbidity."
+    },
+    {
+      "step_number": 6,
+      "action": "mix",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Adjust inoculum turbidity with sterile saline or broth to 0.5 McFarland standard, approximately 1-2 x 10^8 CFU/mL."
+    },
+    {
+      "step_number": 7,
+      "action": "transfer",
+      "volume_ul": 10.0,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Within 15 minutes of inoculum standardization, inoculate each well. Example given: if wells contain 0.1 mL broth, add 0.01 mL inoculum so inoculum volume does not exceed 10% of well volume. Inoculum should be pre-diluted appropriately so final well concentration is approximately 5 x 10^5 CFU/mL."
+    },
+    {
+      "step_number": 8,
+      "action": "transfer",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Include a growth control well, a sterility (uninoculated) well, and concurrently test the corresponding quality control organism."
+    },
+    {
+      "step_number": 9,
+      "action": "incubate",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": 57600,
+      "speed_rpm": null,
+      "temperature_celsius": 35.0,
+      "notes": "Incubate inoculated microdilution trays within 15 minutes of adding inoculum at 35 +/- 2 C for 16-20 hours in ambient air. Do not stack more than four trays."
+    },
+    {
+      "step_number": 10,
+      "action": "dispense",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Read MIC as the lowest antimicrobial concentration showing no visible turbidity compared with the negative control. Verify QC strain MIC is within acceptable CLSI range and that growth control shows growth while sterility well remains clear."
+    }
+  ],
+  "extraction_notes": [
+    "The source material is a guideline/standard and overview, not a single fully specified Opentrons-ready protocol.",
+    "Exact microdilution plate layout, well identities, concentration series, and antimicrobial identities are not provided in the extracted text, so source and destination well locations are set to null.",
+    "Step 5 incubation duration for inoculum growth to 0.5 McFarland is not explicitly specified in seconds in the provided source, so duration_seconds is null.",
+    "The CLSI text mentions CAMHB as the default reference broth microdilution medium, while the laboratory guide also mentions Mueller-Hinton broth generally; both are listed as reagents because the scraped sources reference both.",
+    "The exact pipettes and labware are not specified in the source and were mapped to common Opentrons-compatible equivalents for a 96-well broth microdilution workflow; this mapping is approximate.",
+    "Quality control strain identity is not specified in the extracted source passage, so it is listed generically.",
+    "The reading/interpretation step is represented as a dispense action because the schema does not include a 'read' action.",
+    "Incubation duration for the plate is given as 16-20 hours; 16 hours (57600 seconds) was used as the minimum explicit bound and the range is noted in notes.",
+    "The source notes that final inoculum concentration should be approximately 5 x 10^5 CFU/mL in each well, but the exact dilution procedure varies by delivery method and must be calculated for each setup."
+  ]
+}

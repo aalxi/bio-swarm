@@ -1,0 +1,33 @@
+{
+  "task_id": "b30d1c19",
+  "mode": "wet_lab",
+  "user_input": "Serial dilution protocol for antimicrobial susceptibility testing (broth microdilution method, CLSI M07)",
+  "queries": [
+    "\"CLSI M07\" broth microdilution serial dilution protocol antimicrobial susceptibility testing PDF methodology",
+    "\"broth microdilution\" serial dilution antimicrobial susceptibility testing protocol inoculum preparation cation-adjusted Mueller-Hinton broth",
+    "\"CLSI M07\" MIC broth microdilution 96-well plate procedure dilution scheme bacterial antimicrobial susceptibility testing"
+  ],
+  "all_sources": [
+    "https://clsi.org/media/i54hohjl/modification-of-antimicrobial-susceptibility-testing-methods.pdf",
+    "https://gest.joyadv.it/public/cartellina-allegati-schede-certificazioni/schede-tecniche-inglese/ts-4017412.pdf",
+    "https://www.seco.us/ASSETS/DOCUMENTS/ITEMS/EN/212322.pdf?srsltid=AfmBOoqHxLhbPJ7dQtYHrxuU7KYILfo0RB1UH6lvoqAU-wO5lYAH7q8g",
+    "https://www.testinglab.com/clsi-m07-dilution-methods-for-antimicrobial-susceptibility-testing",
+    "https://pmc.ncbi.nlm.nih.gov/articles/PMC6325200/",
+    "https://www.seco.us/ASSETS/DOCUMENTS/ITEMS/EN/212322.pdf?srsltid=AfmBOooweIHpv5ipdoWanW7oT-x-11LB0qMiue0hyhL1evMqTe3XV0zZ",
+    "https://www.nih.org.pk/wp-content/uploads/2021/02/CLSI-2020.pdf",
+    "https://pdb.apec.org/Supporting%20Docs/3425/Completion%20Report/CTI%2024%2017A%20Anx%203%20Laboratory%20Guide.pdf",
+    "https://simpleshowoflove.weebly.com/uploads/1/4/0/7/14073276/agar_dilution_assay.pdf",
+    "https://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfstandards/detail.cfm?standard__identification_no=45893",
+    "https://clsi.org/shop/standards/m07/",
+    "https://clsjournal.ascls.org/content/25/4/233.full-text.pdf",
+    "https://cdn.media.interlabdist.com.br/uploads/2021/01/Mueller-Hinton-II-Broth-Cation-Ajustado.pdf"
+  ],
+  "result_count": 15,
+  "extraction_url": "https://www.nih.org.pk/wp-content/uploads/2021/02/CLSI-2020.pdf",
+  "output_files": [
+    "workspace/raw_research/b30d1c19_search_0.json",
+    "workspace/raw_research/b30d1c19_search_1.json",
+    "workspace/raw_research/b30d1c19_search_2.json",
+    "workspace/raw_research/b30d1c19_extracted.json"
+  ]
+}

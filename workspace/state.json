@@ -1,36 +1,34 @@
 {
-  "task_id": "38595e83",
+  "task_id": "b30d1c19",
   "mode": "wet_lab",
-  "user_input": "Serial dilution protocol for antimicrobial susceptibility testing (broth microdilution method, CLSI M07)\n",
-  "status": "error",
+  "user_input": "Serial dilution protocol for antimicrobial susceptibility testing (broth microdilution method, CLSI M07)",
+  "status": "complete",
   "research": {
     "done": true,
     "files": [
-      "workspace/raw_research/38595e83_search_0.json",
-      "workspace/raw_research/38595e83_search_1.json",
-      "workspace/raw_research/38595e83_search_2.json",
-      "workspace/raw_research/38595e83_extracted.json",
-      "workspace/raw_research/38595e83_combined.json"
+      "workspace/raw_research/b30d1c19_search_0.json",
+      "workspace/raw_research/b30d1c19_search_1.json",
+      "workspace/raw_research/b30d1c19_search_2.json",
+      "workspace/raw_research/b30d1c19_extracted.json",
+      "workspace/raw_research/b30d1c19_combined.json"
     ],
     "sources": []
   },
   "extraction": {
     "done": true,
-    "protocol_file": "workspace/extracted_protocols/protocol_38595e83.json",
+    "protocol_file": "workspace/extracted_protocols/protocol_b30d1c19.json",
     "schema_valid": true
   },
   "coding": {
-    "done": false,
-    "script_file": null,
-    "simulation_passed": false,
+    "done": true,
+    "script_file": "workspace/generated_code/protocol_b30d1c19.py",
+    "simulation_passed": true,
     "error_log": null,
     "retry_count": 0
   },
   "synthesis": {
-    "done": false,
-    "report_file": null
+    "done": true,
+    "report_file": "workspace/final_reports/report_b30d1c19.md"
   },
-  "errors": [
-    "Coder agent crashed"
-  ]
+  "errors": []
 }
