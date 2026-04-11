@@ -1,0 +1,79 @@
+{
+  "protocol_name": "Broth/Agar Dilution Antimicrobial Susceptibility Testing for Aerobic Bacteria",
+  "paper_source": "CLSI document M07-A10: Methods for Dilution Antimicrobial Susceptibility Tests for Bacteria That Grow Aerobically; Approved Standard\u2014Tenth Edition",
+  "labware_setup": [],
+  "pipettes": [],
+  "reagents": [
+    "Mueller-Hinton broth",
+    "Mueller-Hinton agar",
+    "cation-adjusted Mueller-Hinton broth",
+    "saline",
+    "antimicrobial agents"
+  ],
+  "sequential_steps": [
+    {
+      "step_number": 1,
+      "action": "transfer",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Prepare a series of tubes or plates with broth or agar medium containing various concentrations of antimicrobial agents."
+    },
+    {
+      "step_number": 2,
+      "action": "mix",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Standardize the test organism suspension before inoculation."
+    },
+    {
+      "step_number": 3,
+      "action": "transfer",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Inoculate the prepared broth tubes or agar plates with the standardized suspension of the test organism."
+    },
+    {
+      "step_number": 4,
+      "action": "incubate",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": 35.0,
+      "notes": "Incubate at 35\u00b0C \u00b1 2\u00b0C. Exact incubation duration is not stated in the provided excerpt."
+    },
+    {
+      "step_number": 5,
+      "action": "dispense",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Examine the tests after incubation and determine the MIC as the lowest concentration preventing visible growth."
+    }
+  ],
+  "extraction_notes": [
+    "The provided source is a partial front-matter and introductory excerpt of CLSI M07-A10 and does not include the detailed step-action tables or full procedural parameters.",
+    "No exact Opentrons-compatible labware names are stated in the source, so labware_setup is left empty.",
+    "No pipette models or liquid handling instruments are specified in the source, so pipettes is left empty.",
+    "No exact transfer volumes, well/tube locations, or plate layouts are given in the provided excerpt; these fields are set to null.",
+    "Incubation temperature is explicitly stated as 35\u00b0C \u00b1 2\u00b0C, but exact incubation time is not provided in the excerpt.",
+    "The source describes both broth dilution and agar dilution reference methods at a high level rather than a single automatable protocol.",
+    "The reagent list is limited to media and general materials explicitly mentioned in the provided text; specific antimicrobial compounds and concentrations are not provided."
+  ]
+}

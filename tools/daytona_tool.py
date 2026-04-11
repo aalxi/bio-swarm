@@ -1,5 +1,5 @@
 import os
-from daytona import Daytona, DaytonaConfig, CreateSandboxBaseParams as CreateSandboxParams
+from daytona import Daytona, DaytonaConfig, CreateSandboxFromImageParams, Image
 
 
 def _get_client() -> Daytona:
@@ -15,7 +15,8 @@ def _get_client() -> Daytona:
 def create_sandbox(language: str = "python"):
     """Create a new sandbox. Returns the sandbox object. Caller must delete it."""
     daytona = _get_client()
-    sandbox = daytona.create(CreateSandboxParams(language=language))
+    image = Image.debian_slim("3.11")
+    sandbox = daytona.create(CreateSandboxFromImageParams(image=image, language=language))
     return daytona, sandbox
 
 

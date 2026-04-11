@@ -1,0 +1,123 @@
+{
+  "protocol_name": "Broth microdilution antimicrobial susceptibility testing (MIC determination)",
+  "paper_source": "Clinical and Laboratory Standards Institute. Methods for Dilution Antimicrobial Susceptibility Tests for Bacteria That Grow Aerobically (CLSI M07)",
+  "labware_setup": [
+    "corning_96_wellplate_360ul_flat",
+    "nest_12_reservoir_15ml"
+  ],
+  "pipettes": [
+    "p300_multi_gen2",
+    "p20_single_gen2"
+  ],
+  "reagents": [
+    "tested bacterial strains",
+    "sterile saline",
+    "Mueller-Hinton broth",
+    "cation-adjusted Mueller-Hinton broth",
+    "antimicrobial agents (predried in microtiter plate wells)",
+    "0.5 McFarland turbidity standard solution",
+    "quality control strains"
+  ],
+  "sequential_steps": [
+    {
+      "step_number": 1,
+      "action": "aspirate",
+      "volume_ul": 3000.0,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Prepare a bacterial suspension from an overnight agar culture in 3 mL sterile saline and adjust turbidity to between 0.5 and 1 McFarland. Specific tube labware and source colony location were not stated."
+    },
+    {
+      "step_number": 2,
+      "action": "transfer",
+      "volume_ul": 25.0,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Add 25 \u00b5L of the previously prepared bacterial suspension to 12 mL Mueller-Hinton broth to prepare the inoculation suspension. Exact vessel locations were not provided."
+    },
+    {
+      "step_number": 3,
+      "action": "mix",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Mix the inoculation suspension evenly after adding the bacterial suspension to Mueller-Hinton broth."
+    },
+    {
+      "step_number": 4,
+      "action": "incubate",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Bring the antimicrobial microtiter plate from refrigerated storage to room temperature before inoculation."
+    },
+    {
+      "step_number": 5,
+      "action": "transfer",
+      "volume_ul": 12000.0,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Transfer the prepared inoculation suspension into a reservoir. Exact transferred volume may be the full 12 mL broth suspension, but the source does not explicitly state the total volume transferred."
+    },
+    {
+      "step_number": 6,
+      "action": "distribute",
+      "volume_ul": 100.0,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Inoculate microtiter plate wells with 100 \u00b5L bacterial suspension using an 8- or 12-channel pipette, starting with the wells containing the lowest drug concentration. Well-by-well locations were not provided; avoid touching the dried antimicrobial at the bottom of wells with tips."
+    },
+    {
+      "step_number": 7,
+      "action": "incubate",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Cover the plate and incubate under culture conditions specified for each bacterial species. CLSI source states incubation is after inoculation and often at 35 \u00b1 2 \u00b0C, but exact duration and organism-specific conditions were not provided in the extracted text. Stack no more than three plates."
+    },
+    {
+      "step_number": 8,
+      "action": "dispense",
+      "volume_ul": null,
+      "source_location": null,
+      "destination_location": null,
+      "duration_seconds": null,
+      "speed_rpm": null,
+      "temperature_celsius": null,
+      "notes": "Assess growth in each well visually for turbidity or precipitate. Positive growth criteria: turbidity or precipitate of at least 1 mm diameter, or two or more precipitates even if each is less than 1 mm. Negative growth criteria: no visible turbidity or precipitate, or one precipitate less than 1 mm. This is an analytical readout step represented with the closest allowed action."
+    }
+  ],
+  "extraction_notes": [
+    "The provided CLSI sources are largely descriptive and do not include a fully enumerated machine-executable protocol with explicit well maps; source and destination locations are therefore null.",
+    "Opentrons labware names were mapped to a generic 96-well flat plate and 12-channel reservoir because the source only states 'microtiter plate' and 'reservoir' without manufacturer or geometry details.",
+    "Pipette models were inferred from the stated use of an 8- or 12-channel pipette and a micropipette; exact Opentrons-compatible models are not specified in the source.",
+    "The incubation temperature in CLSI M07 is generally described as 35 \u00b1 2 \u00b0C for dilution tests, but organism-specific incubation conditions apply and exact conditions were not provided in the extracted procedural text, so temperature and duration are null.",
+    "Step 4 uses action 'incubate' to represent equilibration of the refrigerated plate to room temperature because no separate allowed action exists for equilibration.",
+    "Step 8 is a readout/interpretation step, which is not one of the allowed schema actions; it is represented as 'dispense' with explanatory notes.",
+    "The exact antimicrobial agent identities and plate concentration layout were not provided in the extracted sources, only that dry antimicrobials are present in wells.",
+    "The total volume transferred to the reservoir is ambiguous; 12 mL is implied from the prepared inoculation suspension but not explicitly confirmed as the transferred amount.",
+    "No centrifugation steps were described in the source material.",
+    "Agar dilution and broth macrodilution methods are mentioned in the sources, but the only sufficiently procedural details extracted here correspond to the broth microdilution method."
+  ]
+}
