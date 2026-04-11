@@ -10,6 +10,8 @@ import json
 import logging
 import os
 import re
+import time
+from datetime import datetime
 from typing import Any
 
 from openai import OpenAI
@@ -22,6 +24,13 @@ from tools.file_tool import load_json, save_json, save_text
 logger = logging.getLogger(__name__)
 
 _client: OpenAI | None = None
+_stage_start: float = 0.0
+
+
+def _log(msg: str) -> None:
+    elapsed = time.monotonic() - _stage_start
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"[coder {ts} +{elapsed:.1f}s] {msg}", flush=True)
 
 # Up to 4 simulation attempts: initial + 3 retries
 WET_LAB_MAX_SIM_ATTEMPTS = 4
@@ -173,11 +182,19 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
     internal_retries = 0
     last_sim_out = ""
 
+    global _stage_start
+    _stage_start = time.monotonic()
+
+    _log("Creating Daytona sandbox (Python 3.11)...")
     daytona, sandbox = daytona_tool.create_sandbox(language="python")
+    _log(f"Sandbox created: {getattr(sandbox, 'id', sandbox)}")
     try:
+        _log("Running: pip install opentrons (timeout=180s)...")
         pip = daytona_tool.run_cmd(
             sandbox, "pip install opentrons", timeout=180
         )
+        _log(f"pip install exit_code={pip['exit_code']} success={pip['success']}")
+        _log(f"pip stdout tail:\n{(pip['stdout'] or '')[-1000:]}")
         if not pip["success"]:
             return _contract(
                 "error",
@@ -188,13 +205,17 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
             )
 
         for attempt in range(WET_LAB_MAX_SIM_ATTEMPTS):
+            _log(f"Uploading protocol.py to sandbox (attempt {attempt + 1}/{WET_LAB_MAX_SIM_ATTEMPTS})...")
             daytona_tool.upload_file(sandbox, script, "/home/daytona/protocol.py")
+            _log("Running: opentrons_simulate /home/daytona/protocol.py (timeout=120s)...")
             sim = daytona_tool.run_cmd(
                 sandbox,
                 "opentrons_simulate /home/daytona/protocol.py",
                 timeout=120,
             )
             last_sim_out = sim["stdout"] or ""
+            _log(f"opentrons_simulate exit_code={sim['exit_code']} success={sim['success']}")
+            _log(f"simulate stdout:\n{last_sim_out[:2000]}")
 
             if sim["success"]:
                 save_text(script, out_path)
@@ -204,6 +225,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                     if internal_retries
                     else f"Opentrons protocol simulated successfully. Saved to {out_path}"
                 )
+                _log(f"SUCCESS: {msg}")
                 return _contract(
                     "success",
                     [out_path],
@@ -213,6 +235,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                 )
 
             if attempt >= WET_LAB_MAX_SIM_ATTEMPTS - 1:
+                _log(f"FAILED: max retries reached. Last error:\n{last_sim_out[:2000]}")
                 return _contract(
                     "error",
                     [],
@@ -229,13 +252,16 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                 sim["exit_code"],
                 last_sim_out[:500],
             )
+            _log(f"Requesting LLM fix (retry {internal_retries}/{WET_LAB_MAX_SIM_ATTEMPTS - 1})...")
             try:
                 script = _fix_opentrons_script(script, last_sim_out)
                 logger.info(
                     "Wet lab fix attempt %s: requested revised full script from LLM",
                     internal_retries,
                 )
+                _log("LLM fix received, re-uploading...")
             except Exception as e:
+                _log(f"LLM fix failed: {e}")
                 return _contract(
                     "error",
                     [],
