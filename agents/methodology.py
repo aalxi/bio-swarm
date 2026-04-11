@@ -1,6 +1,6 @@
 """Methodology Agent — Extractor: raw research → validated Pydantic JSON.
 
-Reads raw research files from workspace/raw_research/, sends content to GPT-4o
+Reads raw research files from workspace/raw_research/, sends content to GPT-5.4
 to extract structured protocol data matching the target Pydantic schema, validates
 the output, and saves it to workspace/extracted_protocols/.
 """
@@ -130,11 +130,11 @@ def _gather_research_content(output_files: list[str]) -> tuple[str, str]:
 
 
 def _extract_with_llm(research_text: str, mode: str) -> dict:
-    """Call GPT-4o to extract structured data from raw research text."""
+    """Call GPT-5.4 to extract structured data from raw research text."""
     system_prompt = WET_LAB_SYSTEM_PROMPT if mode == "wet_lab" else DRY_LAB_SYSTEM_PROMPT
 
     response = _get_openai_client().chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5.4",
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system_prompt},
@@ -148,11 +148,11 @@ def _extract_with_llm(research_text: str, mode: str) -> dict:
 
 
 def _fix_with_llm(research_text: str, mode: str, bad_json: dict, validation_error: str) -> dict:
-    """Ask GPT-4o to fix invalid JSON given the Pydantic validation error."""
+    """Ask GPT-5.4 to fix invalid JSON given the Pydantic validation error."""
     system_prompt = WET_LAB_SYSTEM_PROMPT if mode == "wet_lab" else DRY_LAB_SYSTEM_PROMPT
 
     response = _get_openai_client().chat.completions.create(
-        model="gpt-4o",
+        model="gpt-5.4",
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system_prompt},
@@ -190,9 +190,9 @@ def methodology_agent(researcher_result: dict, task_id: str) -> dict:
 
     1. Reads all raw research files from researcher_result["output_files"].
     2. Determines mode (wet_lab / dry_lab) from the combined data.
-    3. Sends research content to GPT-4o for structured extraction.
+    3. Sends research content to GPT-5.4 for structured extraction.
     4. Validates against the target Pydantic schema.
-    5. On validation failure, retries once with the error fed back to GPT-4o.
+    5. On validation failure, retries once with the error fed back to GPT-5.4.
     6. Saves validated output to workspace/extracted_protocols/protocol_{task_id}.json.
 
     Returns the Agent Return Contract dict.
@@ -244,7 +244,7 @@ def methodology_agent(researcher_result: dict, task_id: str) -> dict:
     try:
         validated = _validate(extracted, mode)
     except Exception as first_error:
-        # Step 4: Retry once — feed the validation error back to GPT-4o
+        # Step 4: Retry once — feed the validation error back to GPT-5.4
         try:
             fixed = _fix_with_llm(research_text, mode, extracted, str(first_error))
             validated = _validate(fixed, mode)

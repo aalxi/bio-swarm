@@ -1,0 +1,30 @@
+{
+  "task_id": "e5d8e91b",
+  "mode": "wet_lab",
+  "user_input": "Serial dilution protocol for antimicrobial susceptibility testing (broth microdilution method, CLSI M07)",
+  "status": "error",
+  "research": {
+    "done": false,
+    "files": [],
+    "sources": []
+  },
+  "extraction": {
+    "done": false,
+    "protocol_file": null,
+    "schema_valid": false
+  },
+  "coding": {
+    "done": false,
+    "script_file": null,
+    "simulation_passed": false,
+    "error_log": null,
+    "retry_count": 0
+  },
+  "synthesis": {
+    "done": false,
+    "report_file": null
+  },
+  "errors": [
+    "Failed to plan search queries"
+  ]
+}

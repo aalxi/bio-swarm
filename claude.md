@@ -102,7 +102,7 @@ for d in WORKSPACE_DIRS:
 
 ## LLM Configuration
 
-**Model**: `gpt-4o` (string: `"gpt-4o"`)
+**Model**: `gpt-5.4` (string: `"gpt-5.4"`)
 **All agents** use `response_format={"type": "json_object"}` — every agent prompt must instruct the model to return only JSON.
 
 ```python
@@ -110,7 +110,7 @@ from openai import OpenAI
 client = OpenAI()  # reads OPENAI_API_KEY from env
 
 response = client.chat.completions.create(
-    model="gpt-4o",
+    model="gpt-5.4",
     response_format={"type": "json_object"},
     messages=[
         {"role": "system", "content": "...your system prompt..."},
@@ -413,7 +413,7 @@ The **Supervisor Agent is the only agent that writes to `state.json`**. All othe
 
 **Wet Lab behavior**:
 1. Read `protocol_{task_id}.json` via `file_tool.load_json()`
-2. Call GPT-4o with the protocol JSON → generates Opentrons Python script
+2. Call GPT-5.4 with the protocol JSON → generates Opentrons Python script
 3. Create a Daytona sandbox, install `opentrons` via `run_cmd(sandbox, "pip install opentrons")`
 4. Upload the script via `upload_file(sandbox, script, "/home/daytona/protocol.py")`
 5. Run `result = run_cmd(sandbox, "opentrons_simulate /home/daytona/protocol.py")`
