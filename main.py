@@ -52,166 +52,263 @@ STATE_PATH = "workspace/state.json"
 
 CSS_BLOCK = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;700;900&display=swap');
 
-/* Global dark theme */
+/* ── Global layout scale ── */
+:root {
+    --accent: #39ff8f;
+    --accent2: #00e5ff;
+    --accent3: #b6ff59;
+    --bg: #080808;
+    --surface: #0e0e0e;
+    --border: #1f1f1f;
+    --text: #d8d8d8;
+    --dim: #3a3a3a;
+}
+
+html { font-size: 17px; }
+
 [data-testid="stApp"] {
-    background-color: #0a0a0a;
-    color: #e0e0e0;
+    background-color: var(--bg);
+    color: var(--text);
     font-family: 'Inter', system-ui, sans-serif;
 }
-[data-testid="stMain"] {
-    background-color: #0a0a0a;
-}
-[data-testid="stVerticalBlock"] > div {
-    background-color: transparent;
-}
+[data-testid="stMain"] { background-color: var(--bg); }
+[data-testid="stVerticalBlock"] > div { background-color: transparent; }
+
+/* Wider, taller content column */
 [data-testid="stAppViewBlockContainer"] {
-    padding-top: 2rem;
+    max-width: 920px !important;
+    padding-top: 3.5rem;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
 }
+
 header[data-testid="stHeader"] {
-    background-color: #0a0a0a;
-    border-bottom: 1px solid #1a1a1a;
+    background-color: var(--bg);
+    border-bottom: 1px solid #141414;
 }
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 
-/* Text area */
+/* ── Animated title ── */
+.bio-title {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 4.2rem;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    margin-bottom: 0;
+    line-height: 0.95;
+    background: linear-gradient(
+        90deg,
+        #39ff8f 0%,
+        #00e5ff 25%,
+        #b6ff59 50%,
+        #39ff8f 75%,
+        #00e5ff 100%
+    );
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: title-flow 6s linear infinite;
+    will-change: background-position;
+}
+@keyframes title-flow {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+}
+
+.bio-subtitle {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.72rem;
+    color: #2e2e2e;
+    margin-top: 8px;
+    margin-bottom: 40px;
+    letter-spacing: 0.18em;
+}
+
+/* ── Physics toggle ── */
+.toggle-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: #0e0e0e;
+    border: 1px solid #1f1f1f;
+    border-radius: 8px;
+    padding: 4px;
+    width: fit-content;
+    position: relative;
+    margin-bottom: 28px;
+    user-select: none;
+}
+.toggle-track {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    height: calc(100% - 8px);
+    background: linear-gradient(135deg, #1a3a28, #0e2a1c);
+    border: 1px solid #39ff8f44;
+    border-radius: 5px;
+    transition: transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 0 12px #39ff8f22, inset 0 1px 0 #39ff8f18;
+    pointer-events: none;
+}
+.toggle-track.right {
+    transform: translateX(100%);
+}
+.toggle-btn {
+    position: relative;
+    z-index: 1;
+    padding: 10px 28px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #3a3a3a;
+    cursor: pointer;
+    border-radius: 5px;
+    min-width: 130px;
+    text-align: center;
+    transition: color 0.3s ease;
+    border: none;
+    background: transparent;
+    outline: none;
+}
+.toggle-btn.active { color: #39ff8f; }
+
+/* Hide the native Streamlit mode buttons — we use the custom toggle above */
+[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"][kind="secondary"]),
+[data-testid="stHorizontalBlock"]:has(button[kind="primaryFormSubmit"]) {
+    display: none !important;
+}
+/* Fallback: hide mode button row by ID set on parent */
+.native-mode-buttons { display: none !important; }
+
+/* ── Text area ── */
 [data-testid="stTextArea"] textarea {
-    background-color: #111111 !important;
-    color: #e0e0e0 !important;
-    border: 1px solid #2a2a2a !important;
-    border-radius: 4px !important;
+    background-color: #0e0e0e !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 6px !important;
     font-family: 'JetBrains Mono', 'Courier New', monospace !important;
-    font-size: 13px !important;
-    caret-color: #00ff88;
+    font-size: 0.82rem !important;
+    caret-color: var(--accent);
     resize: vertical;
+    padding: 14px 16px !important;
+    line-height: 1.6 !important;
 }
 [data-testid="stTextArea"] textarea:focus {
-    border-color: #00ff88 !important;
-    box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.25) !important;
+    border-color: #39ff8f55 !important;
+    box-shadow: 0 0 0 2px #39ff8f18 !important;
 }
-[data-testid="stTextArea"] label {
-    color: #555555 !important;
-    font-family: 'Inter', system-ui, sans-serif !important;
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
+[data-testid="stTextArea"] textarea::placeholder { color: #2a2a2a !important; }
+[data-testid="stTextArea"] label { display: none !important; }
+
+/* ── Run button ── */
+[data-testid="stButton"][id="run-btn-wrap"] > button,
+button[data-testid="baseButton-secondary"][key="run_btn"],
+div:has(> button[key="run_btn"]) button {
+    background: linear-gradient(135deg, #1a3a28, #0e2a1c) !important;
+    color: #39ff8f !important;
+    border: 1px solid #39ff8f55 !important;
+    border-radius: 6px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.78rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.12em !important;
+    padding: 14px 0 !important;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
 }
-[data-testid="stTextArea"] textarea::placeholder {
-    color: #333333 !important;
+div:has(> button[key="run_btn"]) button:hover {
+    box-shadow: 0 0 20px #39ff8f33 !important;
+    border-color: #39ff8f99 !important;
 }
 
-/* Expander */
+/* ── Expander ── */
 [data-testid="stExpander"] {
-    background-color: #0d0d0d !important;
-    border: 1px solid #1e1e1e !important;
-    border-radius: 4px !important;
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 6px !important;
 }
 [data-testid="stExpander"] summary {
-    color: #555555 !important;
+    color: #444 !important;
     font-family: 'JetBrains Mono', monospace !important;
-    font-size: 11px !important;
+    font-size: 0.72rem !important;
 }
 
-/* Hide st.status() widgets — we replace with custom terminal panels */
+/* Hide native st.status() */
 [data-testid="stStatusWidget"] { display: none !important; }
 
-/* Download button */
+/* ── Download button ── */
 [data-testid="stDownloadButton"] > button {
     background-color: transparent !important;
-    color: #00ff88 !important;
-    border: 1px solid #00ff88 !important;
-    border-radius: 3px !important;
+    color: var(--accent) !important;
+    border: 1px solid #39ff8f44 !important;
+    border-radius: 5px !important;
     font-family: 'JetBrains Mono', monospace !important;
-    font-size: 12px !important;
+    font-size: 0.75rem !important;
     font-weight: 400 !important;
-    padding: 8px 20px !important;
-    letter-spacing: 0.05em;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    padding: 10px 24px !important;
+    letter-spacing: 0.06em;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
     width: auto !important;
 }
 [data-testid="stDownloadButton"] > button:hover {
-    background-color: #00ff88 !important;
-    color: #0a0a0a !important;
+    background-color: #39ff8f18 !important;
+    box-shadow: 0 0 16px #39ff8f22 !important;
 }
 
-/* Page title */
-.bio-title {
-    font-family: 'Inter', system-ui, sans-serif;
-    font-size: 2.4rem;
-    font-weight: 700;
-    color: #00ff88;
-    letter-spacing: -0.03em;
-    margin-bottom: 0;
-    line-height: 1;
-}
-.bio-subtitle {
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 0.7rem;
-    color: #333333;
-    margin-top: 6px;
-    margin-bottom: 32px;
-    letter-spacing: 0.14em;
-}
-
-/* Mode toggle label */
-.mode-toggle-label {
-    font-family: 'Inter', system-ui, sans-serif;
-    font-size: 11px;
-    color: #444444;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-bottom: 6px;
-}
-
-/* Terminal panels */
+/* ── Terminal panels ── */
 .terminal-panel {
-    background-color: #0d0d0d;
-    border: 1px solid #1e1e1e;
-    border-left: 3px solid #00ff88;
-    border-radius: 4px;
-    padding: 16px 20px;
-    margin: 8px 0;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 20px 24px;
+    margin: 10px 0;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 12px;
-    line-height: 1.75;
+    font-size: 0.78rem;
+    line-height: 1.8;
     overflow-x: auto;
+    transition: transform 0.35s cubic-bezier(0.23, 1, 0.32, 1),
+                box-shadow 0.35s cubic-bezier(0.23, 1, 0.32, 1);
 }
-.terminal-panel.running {
-    border-left-color: #ffaa00;
+.terminal-panel:hover {
+    box-shadow: 0 4px 32px #39ff8f0d;
 }
-.terminal-panel.error {
-    border-left-color: #ff4444;
-}
+.terminal-panel.running { border-left-color: #ffaa00; }
+.terminal-panel.error   { border-left-color: #ff4444; }
+
 .terminal-header {
     font-family: 'Inter', system-ui, sans-serif;
-    font-size: 10px;
+    font-size: 0.65rem;
     font-weight: 700;
-    color: #444444;
+    color: #3a3a3a;
     text-transform: uppercase;
-    letter-spacing: 0.15em;
-    margin-bottom: 10px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #1a1a1a;
+    letter-spacing: 0.18em;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #181818;
 }
 .terminal-line {
-    color: #999999;
-    margin: 1px 0;
+    color: #666;
+    margin: 2px 0;
     white-space: pre-wrap;
     word-break: break-word;
 }
-.terminal-line.success { color: #00ff88; }
+.terminal-line.success { color: #39ff8f; }
 .terminal-line.error   { color: #ff5555; }
 .terminal-line.warn    { color: #ffaa00; }
-.terminal-line.dim     { color: #383838; }
+.terminal-line.dim     { color: #2c2c2c; }
+
 .terminal-cursor {
     display: inline-block;
-    width: 8px;
-    height: 13px;
+    width: 9px;
+    height: 14px;
     background-color: #ffaa00;
-    margin-left: 2px;
+    margin-left: 3px;
     vertical-align: middle;
     animation: cur-blink 1s step-end infinite;
 }
@@ -220,37 +317,48 @@ footer { visibility: hidden; }
     50%       { opacity: 0; }
 }
 
-/* Handoff message */
+/* ── Handoff ── */
 .handoff-msg {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 11px;
-    color: #2a5e3a;
+    font-size: 0.7rem;
+    color: #1e4a2c;
     text-align: center;
-    padding: 6px 0 4px 0;
-    letter-spacing: 0.04em;
+    padding: 8px 0 6px 0;
+    letter-spacing: 0.06em;
 }
 
-/* Pipeline complete banner */
+/* ── Pipeline complete ── */
 .pipeline-complete {
     font-family: 'Inter', system-ui, sans-serif;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 700;
-    color: #00ff88;
+    background: linear-gradient(90deg, #39ff8f, #00e5ff, #b6ff59, #39ff8f);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: title-flow 4s linear infinite;
     text-align: center;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.24em;
     text-transform: uppercase;
-    padding: 20px 0 10px 0;
-    border-top: 1px solid #1a1a1a;
-    margin-top: 20px;
+    padding: 24px 0 12px 0;
+    border-top: 1px solid #181818;
+    margin-top: 24px;
 }
 .report-section-label {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: #333333;
+    font-size: 0.65rem;
+    color: #2a2a2a;
     text-transform: uppercase;
-    letter-spacing: 0.14em;
-    margin-top: 18px;
-    margin-bottom: 6px;
+    letter-spacing: 0.18em;
+    margin-top: 20px;
+    margin-bottom: 8px;
+}
+
+/* ── Cursor magnetic field: magnetic-el class ── */
+.magnetic-el {
+    will-change: transform;
+    transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1);
 }
 </style>
 """
@@ -281,7 +389,7 @@ def _terminal_panel(
     lines: list of (css_class, text) tuples.
     state: 'success' | 'error' | 'running'
     """
-    panel_cls = f"terminal-panel {state}"
+    panel_cls = f"terminal-panel magnetic-el {state}"
     rows = ""
     for css_cls, text in lines:
         cls = f"terminal-line {css_cls}".strip()
@@ -311,36 +419,52 @@ st.markdown(CSS_BLOCK, unsafe_allow_html=True)
 if "mode" not in st.session_state:
     st.session_state["mode"] = "Wet Lab"
 
-# Header
+# ── Header ───────────────────────────────────────────────────────────────────
 st.markdown(
-    '<div class="bio-title">BIOSWARM</div>'
+    '<div class="bio-title magnetic-el">BIOSWARM</div>'
     '<div class="bio-subtitle">// MULTI-AGENT AI SYSTEM FOR BIOLOGICAL REPRODUCIBILITY</div>',
     unsafe_allow_html=True,
 )
 
-# Mode toggle
-st.markdown('<div class="mode-toggle-label">Pipeline Mode</div>', unsafe_allow_html=True)
-_sp1, _col_wet, _col_dry, _sp2 = st.columns([1, 2, 2, 1])
-with _col_wet:
-    wet_type = "primary" if st.session_state["mode"] == "Wet Lab" else "secondary"
-    if st.button("🧪  Wet Lab", key="btn_wet", use_container_width=True, type=wet_type):
-        st.session_state["mode"] = "Wet Lab"
-        st.rerun()
-with _col_dry:
-    dry_type = "primary" if st.session_state["mode"] == "Dry Lab" else "secondary"
-    if st.button("💻  Dry Lab", key="btn_dry", use_container_width=True, type=dry_type):
-        st.session_state["mode"] = "Dry Lab"
-        st.rerun()
+# ── Custom physics toggle ─────────────────────────────────────────────────────
+_wet_active = "active" if st.session_state["mode"] == "Wet Lab" else ""
+_dry_active  = "active" if st.session_state["mode"] == "Dry Lab"  else ""
+_track_right = "right"  if st.session_state["mode"] == "Dry Lab"  else ""
+
+st.markdown(
+    f"""
+    <div class="toggle-wrap magnetic-el" id="bio-toggle">
+      <div class="toggle-track {_track_right}" id="toggle-track"></div>
+      <button class="toggle-btn {_wet_active}" id="tbtn-wet" onclick="toggleMode('Wet Lab')">🧪&nbsp; Wet Lab</button>
+      <button class="toggle-btn {_dry_active}"  id="tbtn-dry"  onclick="toggleMode('Dry Lab')">💻&nbsp; Dry Lab</button>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Hidden native Streamlit buttons — JS clicks these to trigger rerun
+with st.container():
+    st.markdown('<div class="native-mode-buttons" id="native-mode-buttons">', unsafe_allow_html=True)
+    _sp1, _col_wet, _col_dry, _sp2 = st.columns([1, 2, 2, 1])
+    with _col_wet:
+        if st.button("Wet Lab", key="btn_wet", use_container_width=True):
+            st.session_state["mode"] = "Wet Lab"
+            st.rerun()
+    with _col_dry:
+        if st.button("Dry Lab", key="btn_dry", use_container_width=True):
+            st.session_state["mode"] = "Dry Lab"
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 mode = st.session_state["mode"]
 
-st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
 # Input
 user_input = st.text_area(
     "Input",
     placeholder="Paste a paper title, DOI, URL, or protocol description...",
-    height=110,
+    height=130,
     label_visibility="collapsed",
 )
 
@@ -348,6 +472,84 @@ user_input = st.text_area(
 _rl, _rc, _rr = st.columns([2, 3, 2])
 with _rc:
     run_clicked = st.button("[ RUN BIOSWARM ]", use_container_width=True, key="run_btn")
+
+# ── JavaScript: toggle + cursor magnetic field ────────────────────────────────
+st.markdown("""
+<script>
+(function () {
+  /* ── 1. Physics toggle ─────────────────────────────────────────────── */
+  window.toggleMode = function (mode) {
+    var track  = document.getElementById('toggle-track');
+    var btnWet = document.getElementById('tbtn-wet');
+    var btnDry = document.getElementById('tbtn-dry');
+    if (!track) return;
+
+    if (mode === 'Wet Lab') {
+      track.classList.remove('right');
+      btnWet.classList.add('active');
+      btnDry.classList.remove('active');
+    } else {
+      track.classList.add('right');
+      btnDry.classList.add('active');
+      btnWet.classList.remove('active');
+    }
+
+    // Click the corresponding hidden Streamlit button to trigger Python rerun
+    var label = (mode === 'Wet Lab') ? 'Wet Lab' : 'Dry Lab';
+    var allBtns = document.querySelectorAll('button[kind="secondary"]');
+    for (var i = 0; i < allBtns.length; i++) {
+      if (allBtns[i].innerText.trim() === label) {
+        allBtns[i].click();
+        break;
+      }
+    }
+  };
+
+  /* ── 2. Cursor magnetic field ──────────────────────────────────────── */
+  var mouseX = 0, mouseY = 0;
+  var targetX = 0, targetY = 0;
+  var rafId = null;
+
+  document.addEventListener('mousemove', function (e) {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+    if (!rafId) rafId = requestAnimationFrame(tick);
+  });
+
+  function tick() {
+    rafId = null;
+    var els = document.querySelectorAll('.magnetic-el');
+    els.forEach(function (el) {
+      var rect = el.getBoundingClientRect();
+      var cx = rect.left + rect.width  / 2;
+      var cy = rect.top  + rect.height / 2;
+      var dx = mouseX - cx;
+      var dy = mouseY - cy;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var radius = Math.max(rect.width, rect.height) * 1.6 + 180;
+
+      if (dist < radius) {
+        var strength = (1 - dist / radius);
+        // cubic ease-out on strength for glass-fluid feel
+        strength = strength * strength * (3 - 2 * strength);
+        var pull = strength * 8;           // max 8 px displacement
+        var tx = (dx / dist) * pull;
+        var ty = (dy / dist) * pull;
+        el.style.transform = 'translate(' + tx.toFixed(2) + 'px, ' + ty.toFixed(2) + 'px)';
+      } else {
+        el.style.transform = 'translate(0px, 0px)';
+      }
+    });
+  }
+
+  // Also apply to terminal panels that appear later (MutationObserver)
+  var observer = new MutationObserver(function () {
+    // Re-query is automatic since querySelectorAll runs on each tick
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+""", unsafe_allow_html=True)
 
 # ── Pipeline ─────────────────────────────────────────────────────────────────
 
