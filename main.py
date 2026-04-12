@@ -128,64 +128,54 @@ footer { visibility: hidden; }
     letter-spacing: 0.18em;
 }
 
-/* ── Physics toggle ── */
-.toggle-wrap {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    background: #0e0e0e;
-    border: 1px solid #1f1f1f;
-    border-radius: 8px;
-    padding: 4px;
-    width: fit-content;
-    position: relative;
-    margin: 0 auto 28px auto;
-    user-select: none;
-}
-.toggle-track {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    width: calc(50% - 4px);
-    height: calc(100% - 8px);
-    background: linear-gradient(135deg, #1a3a28, #0e2a1c);
-    border: 1px solid #4db87a44;
-    border-radius: 5px;
-    transition: transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
-    box-shadow: 0 0 12px #4db87a22, inset 0 1px 0 #4db87a18;
-    pointer-events: none;
-}
-.toggle-track.right {
-    transform: translateX(100%);
-}
-.toggle-btn {
-    position: relative;
-    z-index: 1;
-    padding: 10px 28px;
-    font-family: 'Inter', system-ui, sans-serif;
-    font-size: 0.82rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    color: #3a3a3a;
-    cursor: pointer;
-    border-radius: 5px;
-    min-width: 130px;
-    text-align: center;
-    transition: color 0.3s ease;
-    border: none;
-    background: transparent;
-    outline: none;
-}
-.toggle-btn.active { color: #4db87a; }
+/* ── Mode toggle: two Streamlit buttons styled as a pill track ── */
 
-/* Hide the mode checkbox — JS uses it as a Streamlit rerun trigger */
-[data-testid="stCheckbox"] {
-    position: absolute !important;
-    width: 1px !important;
-    height: 1px !important;
-    overflow: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
+/* Outer track wrapper — targets the column row containing btn_wet/btn_dry */
+div:has(> div > button[key="btn_wet"]),
+div:has(> div > button[key="btn_dry"]) {
+    /* can't directly target the stHorizontalBlock this way — use sibling approach below */
+}
+
+/* Target the horizontal block that holds both toggle buttons by their keys */
+[data-testid="stHorizontalBlock"]:has([data-testid="baseButton-secondary"][key="btn_wet"],
+                                      [data-testid="baseButton-primary"][key="btn_wet"]) {
+    gap: 0 !important;
+    background: #0e0e0e !important;
+    border: 1px solid #1f1f1f !important;
+    border-radius: 8px !important;
+    padding: 4px !important;
+    width: fit-content !important;
+    margin: 0 auto 28px auto !important;
+    align-items: stretch !important;
+}
+
+/* Both toggle buttons base */
+button[key="btn_wet"],
+button[key="btn_dry"] {
+    background: transparent !important;
+    color: #3a3a3a !important;
+    border: none !important;
+    border-radius: 5px !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.04em !important;
+    padding: 10px 28px !important;
+    min-width: 140px !important;
+    transition: color 0.4s ease, background 0.55s cubic-bezier(0.34,1.56,0.64,1),
+                box-shadow 0.55s ease, border-color 0.4s ease !important;
+    box-shadow: none !important;
+}
+
+/* Active (primary type) = selected side gets the green pill */
+button[key="btn_wet"][kind="primaryFormSubmit"],
+button[key="btn_dry"][kind="primaryFormSubmit"],
+button[key="btn_wet"][data-testid="baseButton-primary"],
+button[key="btn_dry"][data-testid="baseButton-primary"] {
+    background: linear-gradient(135deg, #1a3a28, #0e2a1c) !important;
+    color: #4db87a !important;
+    border: 1px solid #4db87a44 !important;
+    box-shadow: 0 0 12px #4db87a22, inset 0 1px 0 #4db87a18 !important;
 }
 
 /* ── Text area ── */
@@ -428,30 +418,20 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Custom physics toggle ─────────────────────────────────────────────────────
-# A hidden st.checkbox carries the state into Python. JS clicks its <input>
-# directly — React fires onChange → Streamlit reruns. No buttons, no query params.
-
-# "dry_lab_mode" checkbox: checked = Dry Lab, unchecked = Wet Lab
-_is_dry = st.session_state.get("mode") == "Dry Lab"
-_dry_checked = st.checkbox("dry_lab_mode", value=_is_dry, key="mode_checkbox",
-                           label_visibility="collapsed")
-st.session_state["mode"] = "Dry Lab" if _dry_checked else "Wet Lab"
-
-_wet_active  = "active" if not _dry_checked else ""
-_dry_active  = "active" if _dry_checked     else ""
-_track_right = "right"  if _dry_checked     else ""
-
-st.markdown(
-    f"""
-    <div class="toggle-wrap magnetic-el" id="bio-toggle">
-      <div class="toggle-track {_track_right}" id="toggle-track"></div>
-      <button class="toggle-btn {_wet_active}" id="tbtn-wet" onclick="toggleMode(false)">🧪&nbsp; Wet Lab</button>
-      <button class="toggle-btn {_dry_active}" id="tbtn-dry" onclick="toggleMode(true)">💻&nbsp; Dry Lab</button>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+# ── Mode toggle ───────────────────────────────────────────────────────────────
+# Two real Streamlit buttons. CSS targets them by key to style as a pill track.
+# type="primary" = active (green pill), type="secondary" = inactive (dim).
+_tc1, _tc2 = st.columns(2)
+with _tc1:
+    _wet_type = "primary" if st.session_state["mode"] == "Wet Lab" else "secondary"
+    if st.button("🧪  Wet Lab", key="btn_wet", type=_wet_type, use_container_width=True):
+        st.session_state["mode"] = "Wet Lab"
+        st.rerun()
+with _tc2:
+    _dry_type = "primary" if st.session_state["mode"] == "Dry Lab" else "secondary"
+    if st.button("💻  Dry Lab", key="btn_dry", type=_dry_type, use_container_width=True):
+        st.session_state["mode"] = "Dry Lab"
+        st.rerun()
 
 mode = st.session_state["mode"]
 
@@ -474,38 +454,7 @@ with _rc:
 st.markdown("""
 <script>
 (function () {
-  /* ── 1. Physics toggle ─────────────────────────────────────────────── */
-  window.toggleMode = function (wantDry) {
-    var track  = document.getElementById('toggle-track');
-    var btnWet = document.getElementById('tbtn-wet');
-    var btnDry = document.getElementById('tbtn-dry');
-    if (!track) return;
-
-    // Animate pill immediately
-    if (wantDry) {
-      track.classList.add('right');
-      if (btnDry) btnDry.classList.add('active');
-      if (btnWet) btnWet.classList.remove('active');
-    } else {
-      track.classList.remove('right');
-      if (btnWet) btnWet.classList.add('active');
-      if (btnDry) btnDry.classList.remove('active');
-    }
-
-    // After transition completes, toggle the hidden checkbox to trigger Streamlit rerun
-    setTimeout(function () {
-      var cb = document.querySelector('input[type="checkbox"][aria-label="dry_lab_mode"]');
-      if (!cb) {
-        // fallback: find by data-testid label
-        cb = document.querySelector('[data-testid="stCheckbox"] input[type="checkbox"]');
-      }
-      if (cb && cb.checked !== wantDry) {
-        cb.click();
-      }
-    }, 580);
-  };
-
-  /* ── 2. Cursor magnetic field ──────────────────────────────────────── */
+  /* ── Cursor magnetic field ──────────────────────────────────────────── */
   var mouseX = 0, mouseY = 0;
   var targetX = 0, targetY = 0;
   var rafId = null;
