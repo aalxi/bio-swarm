@@ -128,70 +128,55 @@ footer { visibility: hidden; }
     letter-spacing: 0.18em;
 }
 
-/* ── Mode toggle ── */
-
-/* The column row that holds the two toggle buttons */
-[data-testid="stHorizontalBlock"]:has(button[key="btn_wet"]) {
-    gap: 0 !important;
-    background: #0e0e0e !important;
-    border: 1px solid #1f1f1f !important;
-    border-radius: 8px !important;
-    padding: 4px !important;
-    width: fit-content !important;
-    margin: 0 auto 28px auto !important;
-    position: relative !important;
+/* ── Physics toggle ── */
+.toggle-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: #0e0e0e;
+    border: 1px solid #1f1f1f;
+    border-radius: 8px;
+    padding: 4px;
+    width: fit-content;
+    position: relative;
+    margin: 0 auto 28px auto;
+    user-select: none;
 }
-
-/* Both toggle buttons: transparent, sitting above the pill */
-button[key="btn_wet"],
-button[key="btn_dry"] {
-    background: transparent !important;
-    color: #3a3a3a !important;
-    border: none !important;
-    border-radius: 5px !important;
-    font-family: 'Inter', system-ui, sans-serif !important;
-    font-size: 0.82rem !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.04em !important;
-    padding: 10px 28px !important;
-    min-width: 140px !important;
-    box-shadow: none !important;
-    position: relative !important;
-    z-index: 2 !important;
-    transition: color 0.4s ease !important;
-}
-button[key="btn_wet"]:hover,
-button[key="btn_dry"]:hover {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-
-/* Active button text color */
-button[key="btn_wet"][data-testid="baseButton-primary"],
-button[key="btn_dry"][data-testid="baseButton-primary"] {
-    color: #4db87a !important;
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-
-/* The sliding pill — injected by JS, positioned absolutely inside the row */
-#toggle-pill {
+.toggle-track {
     position: absolute;
     top: 4px;
     left: 4px;
+    width: calc(50% - 4px);
     height: calc(100% - 8px);
     background: linear-gradient(135deg, #1a3a28, #0e2a1c);
     border: 1px solid #4db87a44;
     border-radius: 5px;
+    transition: transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
     box-shadow: 0 0 12px #4db87a22, inset 0 1px 0 #4db87a18;
     pointer-events: none;
-    z-index: 1;
-    transition: transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1),
-                width 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
-    will-change: transform;
 }
+.toggle-track.right {
+    transform: translateX(100%);
+}
+.toggle-btn {
+    position: relative;
+    z-index: 1;
+    padding: 10px 28px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #3a3a3a;
+    cursor: pointer;
+    border-radius: 5px;
+    min-width: 130px;
+    text-align: center;
+    transition: color 0.3s ease;
+    border: none;
+    background: transparent;
+    outline: none;
+}
+.toggle-btn.active { color: #4db87a; }
 
 /* ── Text area ── */
 [data-testid="stTextArea"] textarea {
@@ -433,20 +418,35 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Mode toggle ───────────────────────────────────────────────────────────────
-# Two real Streamlit buttons. CSS targets them by key to style as a pill track.
-# type="primary" = active (green pill), type="secondary" = inactive (dim).
-_tc1, _tc2 = st.columns(2)
-with _tc1:
-    _wet_type = "primary" if st.session_state["mode"] == "Wet Lab" else "secondary"
-    if st.button("🧪  Wet Lab", key="btn_wet", type=_wet_type, use_container_width=True):
+# ── Custom physics toggle ─────────────────────────────────────────────────────
+_wet_active = "active" if st.session_state["mode"] == "Wet Lab" else ""
+_dry_active  = "active" if st.session_state["mode"] == "Dry Lab"  else ""
+_track_right = "right"  if st.session_state["mode"] == "Dry Lab"  else ""
+
+st.markdown(
+    f"""
+    <div class="toggle-wrap magnetic-el" id="bio-toggle">
+      <div class="toggle-track {_track_right}" id="toggle-track"></div>
+      <button class="toggle-btn {_wet_active}" id="tbtn-wet" onclick="toggleMode('Wet Lab')">🧪&nbsp; Wet Lab</button>
+      <button class="toggle-btn {_dry_active}"  id="tbtn-dry"  onclick="toggleMode('Dry Lab')">💻&nbsp; Dry Lab</button>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Zero-height container — Streamlit buttons needed so JS can click them for rerun.
+# Collapsed to 0px via inline style; columns prevent them affecting layout.
+st.markdown('<div style="height:0;overflow:hidden;position:absolute;pointer-events:none;opacity:0">', unsafe_allow_html=True)
+_hc1, _hc2 = st.columns(2)
+with _hc1:
+    if st.button("Wet Lab", key="btn_wet"):
         st.session_state["mode"] = "Wet Lab"
         st.rerun()
-with _tc2:
-    _dry_type = "primary" if st.session_state["mode"] == "Dry Lab" else "secondary"
-    if st.button("💻  Dry Lab", key="btn_dry", type=_dry_type, use_container_width=True):
+with _hc2:
+    if st.button("Dry Lab", key="btn_dry"):
         st.session_state["mode"] = "Dry Lab"
         st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
 
 mode = st.session_state["mode"]
 
@@ -465,132 +465,41 @@ _rl, _rc, _rr = st.columns([2, 3, 2])
 with _rc:
     run_clicked = st.button("[ RUN BIOSWARM ]", use_container_width=True, key="run_btn")
 
-# ── JavaScript: slider pill + cursor magnetic field ──────────────────────────
+# ── JavaScript: toggle + cursor magnetic field ────────────────────────────────
 st.markdown("""
 <script>
 (function () {
+  /* ── 1. Physics toggle ─────────────────────────────────────────────── */
+  window.toggleMode = function (mode) {
+    var track  = document.getElementById('toggle-track');
+    var btnWet = document.getElementById('tbtn-wet');
+    var btnDry = document.getElementById('tbtn-dry');
+    if (!track) return;
 
-  /* ── 1. Sliding pill ───────────────────────────────────────────────────
-     Strategy:
-     - Find the toggle row (stHorizontalBlock containing btn_wet / btn_dry)
-     - Inject a #toggle-pill div as a child of that row
-     - Measure whichever button is data-testid="baseButton-primary" and
-       position the pill under it (no translateX needed — we just set left)
-     - On button click: move pill immediately (before Streamlit rerenders),
-       giving the full spring animation before the page updates
-  ── */
-
-  function findToggleRow() {
-    var btns = document.querySelectorAll('button[key="btn_wet"], button[key="btn_dry"]');
-    if (btns.length < 2) return null;
-    // Walk up to the stHorizontalBlock
-    var el = btns[0].parentElement;
-    while (el && el.getAttribute('data-testid') !== 'stHorizontalBlock') {
-      el = el.parentElement;
-    }
-    return el;
-  }
-
-  function injectPill(row) {
-    if (document.getElementById('toggle-pill')) return; // already injected
-    var pill = document.createElement('div');
-    pill.id = 'toggle-pill';
-    row.appendChild(pill);
-    return pill;
-  }
-
-  function positionPill(pill, targetBtn, animate) {
-    var row    = findToggleRow();
-    if (!row || !targetBtn) return;
-    var rowRect = row.getBoundingClientRect();
-    var btnRect = targetBtn.getBoundingClientRect();
-    var newLeft = btnRect.left - rowRect.left;   // relative to row
-    var newW    = btnRect.width;
-
-    if (!animate) {
-      // Instant placement on first load — disable transition temporarily
-      pill.style.transition = 'none';
-      pill.style.left  = newLeft + 'px';
-      pill.style.width = newW + 'px';
-      // Re-enable transition after paint
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          pill.style.transition = '';
-        });
-      });
+    if (mode === 'Wet Lab') {
+      track.classList.remove('right');
+      btnWet.classList.add('active');
+      btnDry.classList.remove('active');
     } else {
-      pill.style.left  = newLeft + 'px';
-      pill.style.width = newW + 'px';
+      track.classList.add('right');
+      btnDry.classList.add('active');
+      btnWet.classList.remove('active');
     }
-  }
 
-  function getActiveBtn() {
-    return document.querySelector(
-      'button[key="btn_wet"][data-testid="baseButton-primary"], ' +
-      'button[key="btn_dry"][data-testid="baseButton-primary"]'
-    );
-  }
-
-  function setupToggle() {
-    var row = findToggleRow();
-    if (!row) return false;
-
-    var pill = injectPill(row);
-    if (!pill) pill = document.getElementById('toggle-pill');
-
-    // Position pill on current active button instantly (no animation on load)
-    var active = getActiveBtn();
-    if (active) positionPill(pill, active, false);
-
-    // Wire click handlers on both buttons
-    ['btn_wet', 'btn_dry'].forEach(function (key) {
-      var btn = document.querySelector('button[key="' + key + '"]');
-      if (!btn || btn._pillWired) return;
-      btn._pillWired = true;
-      btn.addEventListener('click', function () {
-        // Animate pill to this button immediately — before Streamlit rerenders
-        positionPill(pill, btn, true);
-        // Also update text color eagerly
-        document.querySelectorAll('button[key="btn_wet"], button[key="btn_dry"]')
-          .forEach(function (b) { b.style.color = '#3a3a3a'; });
-        btn.style.color = '#4db87a';
-      });
-    });
-
-    return true;
-  }
-
-  // Try immediately, then observe DOM until the toggle row appears
-  if (!setupToggle()) {
-    var obs = new MutationObserver(function () {
-      if (setupToggle()) obs.disconnect();
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
-  }
-
-  // After each Streamlit rerender the buttons are replaced — rewire
-  var rerunObs = new MutationObserver(function () {
-    var row = findToggleRow();
-    if (!row) return;
-    // Check if pill is still in the row
-    if (!document.getElementById('toggle-pill')) {
-      setupToggle();
-      return;
+    // Click the corresponding hidden Streamlit button to trigger Python rerun
+    var label = (mode === 'Wet Lab') ? 'Wet Lab' : 'Dry Lab';
+    var allBtns = document.querySelectorAll('button[kind="secondary"]');
+    for (var i = 0; i < allBtns.length; i++) {
+      if (allBtns[i].innerText.trim() === label) {
+        allBtns[i].click();
+        break;
+      }
     }
-    // Rewire any unwired buttons (Streamlit replaces DOM nodes on rerun)
-    ['btn_wet', 'btn_dry'].forEach(function (key) {
-      var btn = document.querySelector('button[key="' + key + '"]');
-      if (btn && !btn._pillWired) setupToggle();
-    });
-    // Snap pill to active button after rerender (no animation — it already played)
-    var active = getActiveBtn();
-    var pill = document.getElementById('toggle-pill');
-    if (active && pill) positionPill(pill, active, false);
-  });
-  rerunObs.observe(document.body, { childList: true, subtree: true });
+  };
 
   /* ── 2. Cursor magnetic field ──────────────────────────────────────── */
   var mouseX = 0, mouseY = 0;
+  var targetX = 0, targetY = 0;
   var rafId = null;
 
   document.addEventListener('mousemove', function (e) {
@@ -601,7 +510,8 @@ st.markdown("""
 
   function tick() {
     rafId = null;
-    document.querySelectorAll('.magnetic-el').forEach(function (el) {
+    var els = document.querySelectorAll('.magnetic-el');
+    els.forEach(function (el) {
       var rect = el.getBoundingClientRect();
       var cx = rect.left + rect.width  / 2;
       var cy = rect.top  + rect.height / 2;
@@ -609,19 +519,26 @@ st.markdown("""
       var dy = mouseY - cy;
       var dist = Math.sqrt(dx * dx + dy * dy);
       var radius = Math.max(rect.width, rect.height) * 1.6 + 180;
+
       if (dist < radius) {
-        var s = 1 - dist / radius;
-        s = s * s * (3 - 2 * s);   // smoothstep
-        var pull = s * 8;
-        el.style.transform = 'translate(' +
-          ((dx / dist) * pull).toFixed(2) + 'px,' +
-          ((dy / dist) * pull).toFixed(2) + 'px)';
+        var strength = (1 - dist / radius);
+        // cubic ease-out on strength for glass-fluid feel
+        strength = strength * strength * (3 - 2 * strength);
+        var pull = strength * 8;           // max 8 px displacement
+        var tx = (dx / dist) * pull;
+        var ty = (dy / dist) * pull;
+        el.style.transform = 'translate(' + tx.toFixed(2) + 'px, ' + ty.toFixed(2) + 'px)';
       } else {
-        el.style.transform = 'translate(0px,0px)';
+        el.style.transform = 'translate(0px, 0px)';
       }
     });
   }
 
+  // Also apply to terminal panels that appear later (MutationObserver)
+  var observer = new MutationObserver(function () {
+    // Re-query is automatic since querySelectorAll runs on each tick
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
 })();
 </script>
 """, unsafe_allow_html=True)
