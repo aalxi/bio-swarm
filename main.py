@@ -178,6 +178,16 @@ footer { visibility: hidden; }
 }
 .toggle-btn.active { color: #4db87a; }
 
+/* Hide the mode checkbox — JS uses it as a Streamlit rerun trigger */
+[data-testid="stCheckbox"] {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 /* ── Text area ── */
 [data-testid="stTextArea"] textarea {
     background-color: #0e0e0e !important;
@@ -418,24 +428,26 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Custom physics toggle — driven entirely by query param ────────────────────
-# JS sets ?mode=dry_lab or ?mode=wet_lab in the URL; Streamlit rereads on reload.
-_qp = st.query_params.get("mode", "wet_lab")
-if _qp == "dry_lab":
-    st.session_state["mode"] = "Dry Lab"
-else:
-    st.session_state["mode"] = "Wet Lab"
+# ── Custom physics toggle ─────────────────────────────────────────────────────
+# A hidden st.checkbox carries the state into Python. JS clicks its <input>
+# directly — React fires onChange → Streamlit reruns. No buttons, no query params.
 
-_wet_active = "active" if st.session_state["mode"] == "Wet Lab" else ""
-_dry_active  = "active" if st.session_state["mode"] == "Dry Lab"  else ""
-_track_right = "right"  if st.session_state["mode"] == "Dry Lab"  else ""
+# "dry_lab_mode" checkbox: checked = Dry Lab, unchecked = Wet Lab
+_is_dry = st.session_state.get("mode") == "Dry Lab"
+_dry_checked = st.checkbox("dry_lab_mode", value=_is_dry, key="mode_checkbox",
+                           label_visibility="collapsed")
+st.session_state["mode"] = "Dry Lab" if _dry_checked else "Wet Lab"
+
+_wet_active  = "active" if not _dry_checked else ""
+_dry_active  = "active" if _dry_checked     else ""
+_track_right = "right"  if _dry_checked     else ""
 
 st.markdown(
     f"""
     <div class="toggle-wrap magnetic-el" id="bio-toggle">
       <div class="toggle-track {_track_right}" id="toggle-track"></div>
-      <button class="toggle-btn {_wet_active}" id="tbtn-wet" onclick="toggleMode('wet_lab')">🧪&nbsp; Wet Lab</button>
-      <button class="toggle-btn {_dry_active}"  id="tbtn-dry"  onclick="toggleMode('dry_lab')">💻&nbsp; Dry Lab</button>
+      <button class="toggle-btn {_wet_active}" id="tbtn-wet" onclick="toggleMode(false)">🧪&nbsp; Wet Lab</button>
+      <button class="toggle-btn {_dry_active}" id="tbtn-dry" onclick="toggleMode(true)">💻&nbsp; Dry Lab</button>
     </div>
     """,
     unsafe_allow_html=True,
@@ -463,26 +475,34 @@ st.markdown("""
 <script>
 (function () {
   /* ── 1. Physics toggle ─────────────────────────────────────────────── */
-  window.toggleMode = function (modeParam) {
-    // Animate the pill immediately for instant feedback before the reload
+  window.toggleMode = function (wantDry) {
     var track  = document.getElementById('toggle-track');
     var btnWet = document.getElementById('tbtn-wet');
     var btnDry = document.getElementById('tbtn-dry');
-    if (track) {
-      if (modeParam === 'wet_lab') {
-        track.classList.remove('right');
-        if (btnWet) btnWet.classList.add('active');
-        if (btnDry) btnDry.classList.remove('active');
-      } else {
-        track.classList.add('right');
-        if (btnDry) btnDry.classList.add('active');
-        if (btnWet) btnWet.classList.remove('active');
-      }
+    if (!track) return;
+
+    // Animate pill immediately
+    if (wantDry) {
+      track.classList.add('right');
+      if (btnDry) btnDry.classList.add('active');
+      if (btnWet) btnWet.classList.remove('active');
+    } else {
+      track.classList.remove('right');
+      if (btnWet) btnWet.classList.add('active');
+      if (btnDry) btnDry.classList.remove('active');
     }
-    // Update query param and let Streamlit rerender — no hidden buttons needed
-    var url = new URL(window.location.href);
-    url.searchParams.set('mode', modeParam);
-    window.location.href = url.toString();
+
+    // After transition completes, toggle the hidden checkbox to trigger Streamlit rerun
+    setTimeout(function () {
+      var cb = document.querySelector('input[type="checkbox"][aria-label="dry_lab_mode"]');
+      if (!cb) {
+        // fallback: find by data-testid label
+        cb = document.querySelector('[data-testid="stCheckbox"] input[type="checkbox"]');
+      }
+      if (cb && cb.checked !== wantDry) {
+        cb.click();
+      }
+    }, 580);
   };
 
   /* ── 2. Cursor magnetic field ──────────────────────────────────────── */
