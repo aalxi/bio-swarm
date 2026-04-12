@@ -102,7 +102,7 @@ def _contract(
 
 def _llm_json(system: str, user: str) -> dict[str, Any]:
     response = _get_openai_client().chat.completions.create(
-        model="gpt-5.4",
+        model="gpt-5.4-mini",
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system},

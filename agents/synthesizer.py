@@ -307,7 +307,7 @@ def synthesizer_agent(task_id: str) -> dict[str, Any]:
 
     try:
         response = _get_openai_client().chat.completions.create(
-            model="gpt-5.4",
+            model="gpt-5.4-mini",
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system},
@@ -328,7 +328,7 @@ def synthesizer_agent(task_id: str) -> dict[str, Any]:
         return _contract(
             "error",
             [],
-            "Failed to generate report via GPT-5.4",
+            "Failed to generate report via GPT-5.4 mini",
             0,
             str(e),
         )
