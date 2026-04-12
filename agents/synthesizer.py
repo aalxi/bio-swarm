@@ -67,22 +67,34 @@ def _system_prompt_dry_lab() -> str:
 You MUST respond with ONLY valid JSON containing exactly one key:
 { "report": "<full Markdown report as a single string; use \\n for newlines inside the string>" }
 
+IMPORTANT: Your analysis must be EVIDENCE-BASED. Cite actual package names, exact error messages, specific file paths, and concrete version numbers from the provided logs and JSON. Do NOT make generic or vague statements — every claim must reference data from the context provided.
+
 Determine the Reproducibility Score using these rules:
-- PASS — Dependencies installed successfully AND the main script ran without errors AND outputs align with the paper's expected/claimed results (or the run log supports success and consistency).
-- PARTIAL — Some steps succeeded (e.g. deps installed) but outputs differ from claims, partial errors, or incomplete alignment with expected_outputs.
-- FAIL — Code did not run, dependencies failed, major missing components, or the run log shows fundamental failure.
+- PASS — ALL of the following: (1) dependencies installed without errors, (2) the main script ran to completion with exit_code=0, (3) expected output files were generated or downloaded successfully, (4) no critical warnings or data-loading failures in stdout.
+- PARTIAL — At least one of: (1) dependencies installed but some packages had warnings or version conflicts, (2) main script ran but exited non-zero or produced partial output, (3) some but not all expected outputs were generated, (4) random seeds are absent making exact reproduction uncertain but execution succeeded.
+- FAIL — Any of: (1) dependency installation failed entirely, (2) main script could not be executed or crashed, (3) repository could not be cloned, (4) critical data files are missing and code attempts to load them, (5) no expected outputs were produced.
 
-The Markdown report MUST include these sections IN THIS EXACT ORDER (use clear ## headings):
+The Markdown report MUST include these 9 sections IN THIS EXACT ORDER (use clear ## headings):
 
-1. ## Paper summary — Summarize the paper's computational goal and what was attempted (from ReproducibilityTarget / protocol JSON and context).
-2. ## Reproducibility Score — Exactly one line prominently stating: **PASS**, **PARTIAL**, or **FAIL** (use those words in ALL CAPS), consistent with the rules above.
-3. ## Environment setup result — Whether dependencies installed (quote exit/success from requirements_install in the run log when available).
-4. ## Execution result — Whether the main script ran without errors (quote exit_code / success from main_script in the run log when available).
-5. ## Output comparison — Compare expected_outputs from extraction to what the run produced or downloaded; note download_errors if any.
-6. ## Specific failure points — If the score is FAIL (or PARTIAL with notable issues), list concrete failures (missing data, dependency errors, wrong paths, etc.). If PASS, state "None" or briefly "N/A".
-7. ## Source citations — List source URLs with short labels from the research bundle (all_sources, queries, etc.).
+1. ## Paper & Repository Summary — Summarize the paper's computational goal, the repository structure, and what was attempted. Include the GitHub URL, main script path, and README highlights if available from the diagnostics. Mention the paper title and source.
 
-Base every factual claim on the provided JSON and logs. Do not invent GitHub or paper details not present in the context. If data is missing, say so."""
+2. ## Reproducibility Score — State exactly one of **PASS**, **PARTIAL**, or **FAIL** on its own line, in bold and ALL CAPS. Follow with 2-3 sentences justifying the score with specific evidence (e.g., "pip install exited with code 0 and no failure lines were detected" or "main script exited with code 1; stderr shows ModuleNotFoundError for package X").
+
+3. ## Dependency Analysis — List key packages from requirements.txt (cite actual names). Report pip install exit_code and success status. If there were dep_failures in diagnostics, list each failed line verbatim. Note any version pins, conflicts, or missing packages. If NO_REQUIREMENTS_FILE, state that explicitly.
+
+4. ## Data Availability — Report what data files were found in the repository (from diagnostics.data_files_found). Cross-reference with data-loading code references (diagnostics.data_load_code_refs). Flag any files the code tries to load that are not present in the repo. Note any data_download_urls from the protocol.
+
+5. ## Reproducibility Practices — Analyze reproducibility signals from diagnostics: random seeds (diagnostics.random_seeds_set — present or absent, cite specific lines), GPU/CUDA dependencies (diagnostics.gpu_required — cite specific references). State whether the code sets deterministic seeds and whether results would be reproducible across runs. Note if the README has clear setup/run instructions.
+
+6. ## Execution Results — Report the main script command, exit_code, and success status. Quote relevant portions of stdout (first/last lines showing key results, errors, or warnings). If the script produced output files (from diagnostics.generated_files), list them. Note any generated figures (diagnostics.generated_figures).
+
+7. ## Output Verification — Compare expected_outputs from the protocol against expected_outputs_found and expected_outputs_missing in the run log. For each expected output, state whether it was found and downloaded, or report the download_error. If diagnostics.generated_files differ from expected, note discrepancies.
+
+8. ## Recommendations — Provide 3-5 specific, actionable recommendations for improving reproducibility. Examples: "Pin numpy to version X.Y.Z as seen in the error log", "Add a random seed call before the training loop in script.py", "Include the missing dataset file X.csv or add a download script", "Add a requirements.txt with pinned versions". Each recommendation must reference specific evidence from the analysis above.
+
+9. ## Source Citations — List all source URLs with short descriptive labels. Include GitHub URL, paper URL (paper_source), any data_download_urls, and URLs from the research bundle (all_sources, search results). Use Markdown link format.
+
+Base every factual claim on the provided JSON and logs. Do not invent GitHub URLs, paper details, package names, or error messages not present in the context. If data for a section is missing from the inputs, state explicitly what is unavailable and why the assessment is limited."""
 
 
 def _read_file_if_exists(path: str) -> tuple[str, str | None]:
