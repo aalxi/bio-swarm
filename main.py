@@ -56,9 +56,9 @@ CSS_BLOCK = """
 
 /* ── Global layout scale ── */
 :root {
-    --accent: #39ff8f;
-    --accent2: #00e5ff;
-    --accent3: #b6ff59;
+    --accent: #4db87a;
+    --accent2: #2a7a5e;
+    --accent3: #3a9e6a;
     --bg: #080808;
     --surface: #0e0e0e;
     --border: #1f1f1f;
@@ -101,17 +101,17 @@ footer { visibility: hidden; }
     line-height: 0.95;
     background: linear-gradient(
         90deg,
-        #39ff8f 0%,
-        #00e5ff 25%,
-        #b6ff59 50%,
-        #39ff8f 75%,
-        #00e5ff 100%
+        #3a7a56 0%,
+        #4db87a 30%,
+        #2a6e50 55%,
+        #3a9e6a 80%,
+        #3a7a56 100%
     );
     background-size: 300% 100%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    animation: title-flow 6s linear infinite;
+    animation: title-flow 14s linear infinite;
     will-change: background-position;
 }
 @keyframes title-flow {
@@ -139,7 +139,7 @@ footer { visibility: hidden; }
     padding: 4px;
     width: fit-content;
     position: relative;
-    margin-bottom: 28px;
+    margin: 0 auto 28px auto;
     user-select: none;
 }
 .toggle-track {
@@ -149,10 +149,10 @@ footer { visibility: hidden; }
     width: calc(50% - 4px);
     height: calc(100% - 8px);
     background: linear-gradient(135deg, #1a3a28, #0e2a1c);
-    border: 1px solid #39ff8f44;
+    border: 1px solid #4db87a44;
     border-radius: 5px;
     transition: transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
-    box-shadow: 0 0 12px #39ff8f22, inset 0 1px 0 #39ff8f18;
+    box-shadow: 0 0 12px #4db87a22, inset 0 1px 0 #4db87a18;
     pointer-events: none;
 }
 .toggle-track.right {
@@ -176,15 +176,7 @@ footer { visibility: hidden; }
     background: transparent;
     outline: none;
 }
-.toggle-btn.active { color: #39ff8f; }
-
-/* Hide the native Streamlit mode buttons — we use the custom toggle above */
-[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"][kind="secondary"]),
-[data-testid="stHorizontalBlock"]:has(button[kind="primaryFormSubmit"]) {
-    display: none !important;
-}
-/* Fallback: hide mode button row by ID set on parent */
-.native-mode-buttons { display: none !important; }
+.toggle-btn.active { color: #4db87a; }
 
 /* ── Text area ── */
 [data-testid="stTextArea"] textarea {
@@ -200,8 +192,8 @@ footer { visibility: hidden; }
     line-height: 1.6 !important;
 }
 [data-testid="stTextArea"] textarea:focus {
-    border-color: #39ff8f55 !important;
-    box-shadow: 0 0 0 2px #39ff8f18 !important;
+    border-color: #4db87a55 !important;
+    box-shadow: 0 0 0 2px #4db87a18 !important;
 }
 [data-testid="stTextArea"] textarea::placeholder { color: #2a2a2a !important; }
 [data-testid="stTextArea"] label { display: none !important; }
@@ -211,8 +203,8 @@ footer { visibility: hidden; }
 button[data-testid="baseButton-secondary"][key="run_btn"],
 div:has(> button[key="run_btn"]) button {
     background: linear-gradient(135deg, #1a3a28, #0e2a1c) !important;
-    color: #39ff8f !important;
-    border: 1px solid #39ff8f55 !important;
+    color: #4db87a !important;
+    border: 1px solid #4db87a55 !important;
     border-radius: 6px !important;
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.78rem !important;
@@ -222,8 +214,8 @@ div:has(> button[key="run_btn"]) button {
     transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
 }
 div:has(> button[key="run_btn"]) button:hover {
-    box-shadow: 0 0 20px #39ff8f33 !important;
-    border-color: #39ff8f99 !important;
+    box-shadow: 0 0 20px #4db87a33 !important;
+    border-color: #4db87a99 !important;
 }
 
 /* ── Expander ── */
@@ -245,7 +237,7 @@ div:has(> button[key="run_btn"]) button:hover {
 [data-testid="stDownloadButton"] > button {
     background-color: transparent !important;
     color: var(--accent) !important;
-    border: 1px solid #39ff8f44 !important;
+    border: 1px solid #4db87a44 !important;
     border-radius: 5px !important;
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.75rem !important;
@@ -256,8 +248,8 @@ div:has(> button[key="run_btn"]) button:hover {
     width: auto !important;
 }
 [data-testid="stDownloadButton"] > button:hover {
-    background-color: #39ff8f18 !important;
-    box-shadow: 0 0 16px #39ff8f22 !important;
+    background-color: #4db87a18 !important;
+    box-shadow: 0 0 16px #4db87a22 !important;
 }
 
 /* ── Terminal panels ── */
@@ -276,7 +268,7 @@ div:has(> button[key="run_btn"]) button:hover {
                 box-shadow 0.35s cubic-bezier(0.23, 1, 0.32, 1);
 }
 .terminal-panel:hover {
-    box-shadow: 0 4px 32px #39ff8f0d;
+    box-shadow: 0 4px 32px #4db87a0d;
 }
 .terminal-panel.running { border-left-color: #ffaa00; }
 .terminal-panel.error   { border-left-color: #ff4444; }
@@ -298,7 +290,7 @@ div:has(> button[key="run_btn"]) button:hover {
     white-space: pre-wrap;
     word-break: break-word;
 }
-.terminal-line.success { color: #39ff8f; }
+.terminal-line.success { color: #4db87a; }
 .terminal-line.error   { color: #ff5555; }
 .terminal-line.warn    { color: #ffaa00; }
 .terminal-line.dim     { color: #2c2c2c; }
@@ -332,12 +324,12 @@ div:has(> button[key="run_btn"]) button:hover {
     font-family: 'Inter', system-ui, sans-serif;
     font-size: 0.85rem;
     font-weight: 700;
-    background: linear-gradient(90deg, #39ff8f, #00e5ff, #b6ff59, #39ff8f);
+    background: linear-gradient(90deg, #3a7a56, #4db87a, #2a6e50, #3a7a56);
     background-size: 300% 100%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    animation: title-flow 4s linear infinite;
+    animation: title-flow 10s linear infinite;
     text-align: center;
     letter-spacing: 0.24em;
     text-transform: uppercase;
@@ -442,19 +434,19 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Hidden native Streamlit buttons — JS clicks these to trigger rerun
-with st.container():
-    st.markdown('<div class="native-mode-buttons" id="native-mode-buttons">', unsafe_allow_html=True)
-    _sp1, _col_wet, _col_dry, _sp2 = st.columns([1, 2, 2, 1])
-    with _col_wet:
-        if st.button("Wet Lab", key="btn_wet", use_container_width=True):
-            st.session_state["mode"] = "Wet Lab"
-            st.rerun()
-    with _col_dry:
-        if st.button("Dry Lab", key="btn_dry", use_container_width=True):
-            st.session_state["mode"] = "Dry Lab"
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+# Zero-height container — Streamlit buttons needed so JS can click them for rerun.
+# Collapsed to 0px via inline style; columns prevent them affecting layout.
+st.markdown('<div style="height:0;overflow:hidden;position:absolute;pointer-events:none;opacity:0">', unsafe_allow_html=True)
+_hc1, _hc2 = st.columns(2)
+with _hc1:
+    if st.button("Wet Lab", key="btn_wet"):
+        st.session_state["mode"] = "Wet Lab"
+        st.rerun()
+with _hc2:
+    if st.button("Dry Lab", key="btn_dry"):
+        st.session_state["mode"] = "Dry Lab"
+        st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
 
 mode = st.session_state["mode"]
 
