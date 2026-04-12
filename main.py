@@ -418,7 +418,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Custom physics toggle ─────────────────────────────────────────────────────
+# ── Custom physics toggle — driven entirely by query param ────────────────────
+# JS sets ?mode=dry_lab or ?mode=wet_lab in the URL; Streamlit rereads on reload.
+_qp = st.query_params.get("mode", "wet_lab")
+if _qp == "dry_lab":
+    st.session_state["mode"] = "Dry Lab"
+else:
+    st.session_state["mode"] = "Wet Lab"
+
 _wet_active = "active" if st.session_state["mode"] == "Wet Lab" else ""
 _dry_active  = "active" if st.session_state["mode"] == "Dry Lab"  else ""
 _track_right = "right"  if st.session_state["mode"] == "Dry Lab"  else ""
@@ -427,26 +434,12 @@ st.markdown(
     f"""
     <div class="toggle-wrap magnetic-el" id="bio-toggle">
       <div class="toggle-track {_track_right}" id="toggle-track"></div>
-      <button class="toggle-btn {_wet_active}" id="tbtn-wet" onclick="toggleMode('Wet Lab')">🧪&nbsp; Wet Lab</button>
-      <button class="toggle-btn {_dry_active}"  id="tbtn-dry"  onclick="toggleMode('Dry Lab')">💻&nbsp; Dry Lab</button>
+      <button class="toggle-btn {_wet_active}" id="tbtn-wet" onclick="toggleMode('wet_lab')">🧪&nbsp; Wet Lab</button>
+      <button class="toggle-btn {_dry_active}"  id="tbtn-dry"  onclick="toggleMode('dry_lab')">💻&nbsp; Dry Lab</button>
     </div>
     """,
     unsafe_allow_html=True,
 )
-
-# Zero-height container — Streamlit buttons needed so JS can click them for rerun.
-# Collapsed to 0px via inline style; columns prevent them affecting layout.
-st.markdown('<div style="height:0;overflow:hidden;position:absolute;pointer-events:none;opacity:0">', unsafe_allow_html=True)
-_hc1, _hc2 = st.columns(2)
-with _hc1:
-    if st.button("Wet Lab", key="btn_wet"):
-        st.session_state["mode"] = "Wet Lab"
-        st.rerun()
-with _hc2:
-    if st.button("Dry Lab", key="btn_dry"):
-        st.session_state["mode"] = "Dry Lab"
-        st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
 
 mode = st.session_state["mode"]
 
@@ -470,31 +463,26 @@ st.markdown("""
 <script>
 (function () {
   /* ── 1. Physics toggle ─────────────────────────────────────────────── */
-  window.toggleMode = function (mode) {
+  window.toggleMode = function (modeParam) {
+    // Animate the pill immediately for instant feedback before the reload
     var track  = document.getElementById('toggle-track');
     var btnWet = document.getElementById('tbtn-wet');
     var btnDry = document.getElementById('tbtn-dry');
-    if (!track) return;
-
-    if (mode === 'Wet Lab') {
-      track.classList.remove('right');
-      btnWet.classList.add('active');
-      btnDry.classList.remove('active');
-    } else {
-      track.classList.add('right');
-      btnDry.classList.add('active');
-      btnWet.classList.remove('active');
-    }
-
-    // Click the corresponding hidden Streamlit button to trigger Python rerun
-    var label = (mode === 'Wet Lab') ? 'Wet Lab' : 'Dry Lab';
-    var allBtns = document.querySelectorAll('button[kind="secondary"]');
-    for (var i = 0; i < allBtns.length; i++) {
-      if (allBtns[i].innerText.trim() === label) {
-        allBtns[i].click();
-        break;
+    if (track) {
+      if (modeParam === 'wet_lab') {
+        track.classList.remove('right');
+        if (btnWet) btnWet.classList.add('active');
+        if (btnDry) btnDry.classList.remove('active');
+      } else {
+        track.classList.add('right');
+        if (btnDry) btnDry.classList.add('active');
+        if (btnWet) btnWet.classList.remove('active');
       }
     }
+    // Update query param and let Streamlit rerender — no hidden buttons needed
+    var url = new URL(window.location.href);
+    url.searchParams.set('mode', modeParam);
+    window.location.href = url.toString();
   };
 
   /* ── 2. Cursor magnetic field ──────────────────────────────────────── */
