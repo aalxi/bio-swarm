@@ -9,6 +9,7 @@ import json
 from openai import OpenAI
 from tools.tavily_tool import search_web, extract_url
 from tools.file_tool import save_json
+from tools.token_tracker import track_call
 
 _client = None
 
@@ -40,19 +41,21 @@ Return ONLY valid JSON with this exact structure:
 """
 
 EXTRACT_PLANNER_SYSTEM_PROMPT = """\
-You are deciding which URL from a set of search results deserves full-page extraction.
-Pick the single most relevant URL — the one most likely to contain the complete methodology,
+You are deciding which URLs from a set of search results deserve full-page extraction.
+Pick the top 2 most relevant URLs — the ones most likely to contain the complete methodology,
 protocol details, or (for dry_lab) the code repository page.
 
 Return ONLY valid JSON with this exact structure:
 {
-  "url": "https://...",
-  "reason": "one sentence explaining why this URL is the best candidate"
+  "urls": [
+    {"url": "https://...", "reason": "one sentence explaining why"},
+    {"url": "https://...", "reason": "one sentence explaining why"}
+  ]
 }
+If fewer than 2 URLs are relevant, return only the relevant ones.
 If none of the URLs are relevant, return:
 {
-  "url": null,
-  "reason": "no relevant URLs found"
+  "urls": []
 }
 """
 
@@ -67,12 +70,13 @@ def _plan_queries(user_input: str, mode: str) -> list[str]:
             {"role": "user", "content": f"Mode: {mode}\nUser input: {user_input}"},
         ],
     )
+    track_call("researcher", response)
     data = json.loads(response.choices[0].message.content)
     return data.get("queries", [])
 
 
-def _pick_extraction_url(results: list[dict], mode: str) -> str | None:
-    """Ask GPT-5.4 mini which URL deserves full extraction."""
+def _pick_extraction_urls(results: list[dict], mode: str) -> list[str]:
+    """Ask GPT-5.4 mini which URLs deserve full extraction (top 2)."""
     summaries = []
     for r in results:
         summaries.append({"url": r.get("url"), "title": r.get("title"), "snippet": r.get("content", "")[:300]})
@@ -85,8 +89,10 @@ def _pick_extraction_url(results: list[dict], mode: str) -> str | None:
             {"role": "user", "content": f"Mode: {mode}\nSearch results:\n{json.dumps(summaries, indent=2)}"},
         ],
     )
+    track_call("researcher", response)
     data = json.loads(response.choices[0].message.content)
-    return data.get("url")
+    urls_list = data.get("urls", [])
+    return [entry["url"] for entry in urls_list if entry.get("url")]
 
 
 def researcher_agent(user_input: str, mode: str, task_id: str) -> dict:
@@ -163,26 +169,35 @@ def researcher_agent(user_input: str, mode: str, task_id: str) -> dict:
 
         all_results.extend(results)
 
-        # Save raw search results per query
+        # Save search results per query (strip raw_content to reduce token usage)
+        clean_results = [
+            {
+                "url": r.get("url"),
+                "title": r.get("title"),
+                "content": r.get("content"),
+                "score": r.get("score"),
+            }
+            for r in results
+        ]
         search_file = f"workspace/raw_research/{task_id}_search_{i}.json"
-        save_json({"query": query, "results": results, "sources": [r.get("url") for r in results]}, search_file)
+        save_json({"query": query, "results": clean_results, "sources": [r.get("url") for r in results]}, search_file)
         output_files.append(search_file)
 
-    # Step 3: Pick the best URL for full extraction
-    extraction_url = None
+    # Step 3: Pick the best URLs for full extraction (top 2)
+    extraction_urls = []
     try:
-        extraction_url = _pick_extraction_url(all_results, mode)
+        extraction_urls = _pick_extraction_urls(all_results, mode)
     except Exception:
         # Non-fatal — we still have search results saved
         pass
 
-    # Step 4: Extract full page content from the best URL
-    if extraction_url:
+    # Step 4: Extract full page content from the top URLs
+    for idx, ext_url in enumerate(extraction_urls):
         try:
-            full_content = extract_url(extraction_url)
-            extract_file = f"workspace/raw_research/{task_id}_extracted.json"
+            full_content = extract_url(ext_url)
+            extract_file = f"workspace/raw_research/{task_id}_extracted_{idx}.json"
             save_json({
-                "source_url": extraction_url,
+                "source_url": ext_url,
                 "raw_content": full_content,
             }, extract_file)
             output_files.append(extract_file)
@@ -199,7 +214,7 @@ def researcher_agent(user_input: str, mode: str, task_id: str) -> dict:
         "queries": queries,
         "all_sources": list(set(all_sources)),
         "result_count": len(all_results),
-        "extraction_url": extraction_url,
+        "extraction_urls": extraction_urls,
         "output_files": output_files,
     }, combined_file)
     output_files.append(combined_file)

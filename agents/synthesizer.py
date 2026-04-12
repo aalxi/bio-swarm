@@ -9,6 +9,7 @@ from typing import Any
 
 from openai import OpenAI
 
+from tools.token_tracker import track_call
 from tools.file_tool import load_json, load_text, save_text
 
 _client: OpenAI | None = None
@@ -314,6 +315,7 @@ def synthesizer_agent(task_id: str) -> dict[str, Any]:
                 {"role": "user", "content": user_content},
             ],
         )
+        track_call("synthesizer", response)
         raw = response.choices[0].message.content
         if not raw:
             return _contract(

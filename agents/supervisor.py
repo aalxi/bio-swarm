@@ -6,6 +6,7 @@ from agents.researcher import researcher_agent
 from agents.methodology import methodology_agent
 from agents.coder import coder_agent
 from agents.synthesizer import synthesizer_agent
+from tools.token_tracker import print_summary as print_token_summary
 
 
 STATE_PATH = "workspace/state.json"
@@ -117,6 +118,7 @@ def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None)
     _save_state(state)
     _notify(status_callback, "Report complete")
 
+    print_token_summary()
     return {
         "status": "success",
         "task_id": task_id,
@@ -159,6 +161,7 @@ def _handle_error(state: WorkspaceState, phase: str, result: dict) -> dict:
     state.errors.append(f"[{phase}] {msg}: {detail}" if detail else f"[{phase}] {msg}")
     state.status = "error"
     _save_state(state)
+    print_token_summary()
     return {
         "status": "error",
         "task_id": state.task_id,

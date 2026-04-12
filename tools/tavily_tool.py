@@ -21,7 +21,7 @@ def search_web(query: str, max_results: int = 5, search_depth: str = "advanced")
             query=query,
             max_results=max_results,
             search_depth=search_depth,
-            include_raw_content=True,
+            include_raw_content=False,
             include_answer=False,
         )
         return response["results"]

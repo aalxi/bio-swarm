@@ -8,6 +8,7 @@ the output, and saves it to workspace/extracted_protocols/.
 import json
 from openai import OpenAI
 from tools.file_tool import load_json, save_json
+from tools.token_tracker import track_call
 from schemas.opentrons_schema import OpentronsProtocol
 from schemas.dry_lab_schema import ReproducibilityTarget
 
@@ -123,8 +124,8 @@ def _gather_research_content(output_files: list[str]) -> tuple[str, str]:
 
     combined_text = "\n\n".join(chunks)
     # Truncate to avoid hitting token limits — keep first ~80k chars
-    if len(combined_text) > 80000:
-        combined_text = combined_text[:80000] + "\n\n[TRUNCATED]"
+    if len(combined_text) > 30000:
+        combined_text = combined_text[:30000] + "\n\n[TRUNCATED]"
 
     return mode, combined_text
 
@@ -144,6 +145,7 @@ def _extract_with_llm(research_text: str, mode: str) -> dict:
             },
         ],
     )
+    track_call("methodology", response)
     return json.loads(response.choices[0].message.content)
 
 
@@ -171,6 +173,7 @@ def _fix_with_llm(research_text: str, mode: str, bad_json: dict, validation_erro
             },
         ],
     )
+    track_call("methodology", response)
     return json.loads(response.choices[0].message.content)
 
 

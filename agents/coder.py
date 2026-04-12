@@ -16,6 +16,7 @@ from typing import Any
 
 from openai import OpenAI
 
+from tools.token_tracker import track_call
 from schemas.dry_lab_schema import ReproducibilityTarget
 from schemas.opentrons_schema import OpentronsProtocol
 from tools import daytona_tool
@@ -109,6 +110,7 @@ def _llm_json(system: str, user: str) -> dict[str, Any]:
             {"role": "user", "content": user},
         ],
     )
+    track_call("coder", response)
     raw = response.choices[0].message.content
     if not raw:
         raise RuntimeError("Empty LLM response")
