@@ -1,6 +1,6 @@
 """Researcher Agent — Tavily-powered web search & scraping.
 
-Uses GPT-5.4 to plan search queries, then executes them via Tavily.
+Uses GPT-5.4 mini to plan search queries, then executes them via Tavily.
 Saves all raw results to workspace/raw_research/ and returns the
 Agent Return Contract dict to the Supervisor.
 """
@@ -58,9 +58,9 @@ If none of the URLs are relevant, return:
 
 
 def _plan_queries(user_input: str, mode: str) -> list[str]:
-    """Ask GPT-5.4 to generate targeted search queries."""
+    """Ask GPT-5.4 mini to generate targeted search queries."""
     response = _get_openai_client().chat.completions.create(
-        model="gpt-5.4",
+        model="gpt-5.4-mini",
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": SEARCH_PLANNER_SYSTEM_PROMPT},
@@ -72,13 +72,13 @@ def _plan_queries(user_input: str, mode: str) -> list[str]:
 
 
 def _pick_extraction_url(results: list[dict], mode: str) -> str | None:
-    """Ask GPT-5.4 which URL deserves full extraction."""
+    """Ask GPT-5.4 mini which URL deserves full extraction."""
     summaries = []
     for r in results:
         summaries.append({"url": r.get("url"), "title": r.get("title"), "snippet": r.get("content", "")[:300]})
 
     response = _get_openai_client().chat.completions.create(
-        model="gpt-5.4",
+        model="gpt-5.4-mini",
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": EXTRACT_PLANNER_SYSTEM_PROMPT},
@@ -92,9 +92,9 @@ def _pick_extraction_url(results: list[dict], mode: str) -> str | None:
 def researcher_agent(user_input: str, mode: str, task_id: str) -> dict:
     """Run the Researcher Agent pipeline.
 
-    1. GPT-5.4 plans 2-3 search queries based on user_input and mode.
+    1. GPT-5.4 mini plans 2-3 search queries based on user_input and mode.
     2. Executes each query via Tavily search_web().
-    3. GPT-5.4 picks the best URL for full extraction.
+    3. GPT-5.4 mini picks the best URL for full extraction.
     4. Extracts full page content via Tavily extract_url().
     5. Saves all raw results to workspace/raw_research/.
 

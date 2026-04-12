@@ -567,7 +567,7 @@ if run_clicked and user_input.strip():
             [
                 ("dim", f"> [{ts}]  task: {task_id}  |  mode: {mode_key}"),
                 ("dim", f"> [{ts}]  initializing researcher agent..."),
-                ("",    f"> [{ts}]  planning Tavily web search queries via GPT-5.4..."),
+                ("",    f"> [{ts}]  planning Tavily web search queries via GPT-5.4 mini..."),
             ],
             "running",
         ),
@@ -690,7 +690,7 @@ if run_clicked and user_input.strip():
             _terminal_panel(
                 "METHODOLOGY AGENT",
                 [
-                    ("",      f"> [{ts}]  running LLM extraction (GPT-5.4)..."),
+                    ("",      f"> [{ts}]  running LLM extraction (GPT-5.4 mini)..."),
                     ("warn",  f"> [{ts}]  schema fix retry: {retry} attempt(s)") if retry > 0 else
                     ("dim",   f"> [{ts}]  no retry performed"),
                     ("error", f"> [{ts}]  ERROR: {methodology_result.get('message', 'Unknown error')}"),
@@ -709,7 +709,7 @@ if run_clicked and user_input.strip():
     meth_retry = methodology_result.get("retry_count", 0)
     meth_lines = [
         ("dim",     f"> [{ts}]  receiving {n_research_files} research file(s)"),
-        ("",        f"> [{ts}]  calling GPT-5.4 for structured extraction..."),
+        ("",        f"> [{ts}]  calling GPT-5.4 mini for structured extraction..."),
         ("",        f"> [{ts}]  validating output against Pydantic schema..."),
     ]
     if meth_retry > 0:
@@ -744,7 +744,7 @@ if run_clicked and user_input.strip():
             [
                 ("dim", f"> [{ts}]  protocol file: protocol_{task_id}.json"),
                 ("dim", f"> [{ts}]  initializing coder agent..."),
-                ("",    f"> [{ts}]  generating Opentrons script via GPT-5.4..."),
+                ("",    f"> [{ts}]  generating Opentrons script via GPT-5.4 mini..."),
                 ("",    f"> [{ts}]  spawning Daytona sandbox..."),
             ],
             "running",
@@ -804,7 +804,7 @@ if run_clicked and user_input.strip():
     script_file = coder_result["output_files"][0] if coder_result["output_files"] else "N/A"
     coder_lines = [
         ("dim",     f"> [{ts}]  protocol_{task_id}.json loaded and validated"),
-        ("",        f"> [{ts}]  GPT-5.4 script generation complete"),
+        ("",        f"> [{ts}]  GPT-5.4 mini script generation complete"),
         ("",        f"> [{ts}]  Daytona sandbox created, installing opentrons..."),
         ("",        f"> [{ts}]  uploading protocol.py, running opentrons_simulate..."),
     ]
@@ -898,7 +898,7 @@ if run_clicked and user_input.strip():
             "SYNTHESIZER AGENT",
             [
                 ("dim",     f"> [{ts}]  loading state.json, protocol JSON, code artifacts"),
-                ("",        f"> [{ts}]  calling GPT-5.4 to generate final Markdown report..."),
+                ("",        f"> [{ts}]  calling GPT-5.4 mini to generate final Markdown report..."),
                 ("success", f"> [{ts}]  report written to {report_file}"),
                 ("success", f"> [{ts}]  status: SUCCESS"),
             ],

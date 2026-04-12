@@ -1,6 +1,6 @@
 # BioSwarm
 
-Multi-agent AI system that bridges published biology research and physical/computational execution. Built with GPT-5.4, Tavily, Daytona sandboxes, and Streamlit.
+Multi-agent AI system that bridges published biology research and physical/computational execution. Built with GPT-5.4 mini, Tavily, Daytona sandboxes, and Streamlit.
 
 ## What It Does
 
@@ -16,9 +16,9 @@ Five specialized agents coordinate through a shared file-based workspace — no 
 |---|---|---|
 | **Supervisor** (PI) | Orchestrates pipeline, owns state | `state.json` |
 | **Researcher** | Web search & scraping | Tavily |
-| **Methodology** | Extracts structured protocols from raw research | GPT-5.4 + Pydantic |
+| **Methodology** | Extracts structured protocols from raw research | GPT-5.4 mini + Pydantic |
 | **Coder** | Generates & validates executable code | Daytona sandboxes |
-| **Synthesizer** | Writes final human-readable report | GPT-5.4 |
+| **Synthesizer** | Writes final human-readable report | GPT-5.4 mini |
 
 ```
 User Input → Supervisor → Researcher → Methodology → Coder → Synthesizer → Report
