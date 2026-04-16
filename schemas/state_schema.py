@@ -14,6 +14,14 @@ class ExtractionState(BaseModel):
     schema_valid: bool = False
 
 
+class EnrichmentState(BaseModel):
+    done: bool = False
+    enrichment_file: Optional[str] = None  # path to enrichment_{task_id}.json
+    gaps_identified: int = 0
+    gaps_filled: int = 0
+    skipped: bool = False  # True if mode != wet_lab or PIE errored non-fatally
+
+
 class CodingState(BaseModel):
     done: bool = False
     script_file: Optional[str] = None
@@ -31,9 +39,10 @@ class WorkspaceState(BaseModel):
     task_id: str
     mode: Literal["wet_lab", "dry_lab"]
     user_input: str
-    status: Literal["research", "extraction", "coding", "simulation", "synthesis", "complete", "error"]
+    status: Literal["research", "extraction", "enrichment", "coding", "simulation", "synthesis", "complete", "error"]
     research: ResearchState = ResearchState()
     extraction: ExtractionState = ExtractionState()
+    enrichment: EnrichmentState = EnrichmentState()
     coding: CodingState = CodingState()
     synthesis: SynthesisState = SynthesisState()
     errors: List[str] = []

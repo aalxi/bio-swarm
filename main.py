@@ -30,6 +30,7 @@ load_dotenv()
 
 from agents.researcher import researcher_agent
 from agents.methodology import methodology_agent
+from agents.enricher import enricher_agent
 from agents.coder import coder_agent
 from agents.synthesizer import synthesizer_agent
 from schemas.state_schema import WorkspaceState
@@ -726,8 +727,98 @@ if run_clicked and user_input.strip():
     state.extraction.done = True
     state.extraction.protocol_file = methodology_result["output_files"][0]
     state.extraction.schema_valid = True
-    state.status = "coding"
+    state.status = "enrichment" if mode_key == "wet_lab" else "coding"
     save_json(state.model_dump(), STATE_PATH)
+
+    # ── 2b. PIE Agent (wet-lab only, non-blocking) ─────────────────────────
+
+    if mode_key == "wet_lab":
+        st.markdown(
+            _handoff_msg(len(methodology_result["output_files"]), "PIE AGENT"),
+            unsafe_allow_html=True,
+        )
+
+        ts = _now()
+        ph_enricher = st.empty()
+        ph_enricher.markdown(
+            _terminal_panel(
+                "PIE AGENT",
+                [
+                    ("dim", f"> [{ts}]  reading protocol_{task_id}.json from methodology agent"),
+                    ("dim", f"> [{ts}]  running gap analysis..."),
+                ],
+            ),
+            unsafe_allow_html=True,
+        )
+
+        try:
+            enricher_result = enricher_agent(methodology_result, task_id)
+        except Exception:
+            tb = traceback.format_exc()
+            ts = _now()
+            enricher_result = {
+                "status": "error",
+                "message": "Unhandled exception in PIE agent",
+                "output_files": [],
+                "retry_count": 0,
+                "error_detail": tb,
+                "gaps_filled": 0,
+            }
+
+        ts = _now()
+        if enricher_result["status"] == "success":
+            gaps_identified = 0
+            gaps_filled = enricher_result.get("gaps_filled", 0)
+            elog = enricher_result.get("enrichment_log") or {}
+            if not elog:
+                # Read from the protocol file if enrichment_log wasn't forwarded
+                try:
+                    _proto = load_json(f"workspace/extracted_protocols/protocol_{task_id}.json")
+                    elog = _proto.get("enrichment_log") or {}
+                except Exception:
+                    pass
+            gaps_identified = elog.get("gaps_identified", gaps_filled)
+            conflicts = elog.get("conflicts", [])
+
+            pie_lines = [
+                ("dim",     f"> [{ts}]  reading protocol_{task_id}.json from methodology agent"),
+                ("",        f"> [{ts}]  gap analysis: {gaps_identified} critical null fields found"),
+                ("",        f"> [{ts}]  executing {elog.get('tavily_queries_executed', 0)} targeted Tavily searches..."),
+            ]
+            if conflicts:
+                pie_lines.append(("warn", f"> [{ts}]  {len(conflicts)} conflicting value(s) found — not applied"))
+            pie_lines += [
+                ("success", f"> [{ts}]  {gaps_filled}/{gaps_identified} fields enriched (confidence ≥ 0.7)"),
+                ("success", f"> [{ts}]  enriched protocol saved → protocol_{task_id}.json"),
+                ("dim",     f"> [{ts}]  audit log → enrichment_{task_id}.json"),
+                ("success", f"> [{ts}]  status: SUCCESS"),
+            ]
+            ph_enricher.markdown(
+                _terminal_panel("PIE AGENT", pie_lines, "success"),
+                unsafe_allow_html=True,
+            )
+            state.enrichment.done = True
+            state.enrichment.gaps_identified = gaps_identified
+            state.enrichment.gaps_filled = gaps_filled
+            if len(enricher_result["output_files"]) > 1:
+                state.enrichment.enrichment_file = enricher_result["output_files"][1]
+        else:
+            pie_lines = [
+                ("warn", f"> [{ts}]  PIE encountered an error — continuing with sparse protocol"),
+                ("dim",  f"> [{ts}]  {enricher_result.get('message', 'Unknown error')}"),
+                ("warn", f"> [{ts}]  status: SKIPPED (pipeline continues)"),
+            ]
+            ph_enricher.markdown(
+                _terminal_panel("PIE AGENT", pie_lines, "running"),
+                unsafe_allow_html=True,
+            )
+            state.enrichment.skipped = True
+            state.errors.append(
+                f"[enrichment] {enricher_result.get('message', 'PIE failed')} — pipeline continues"
+            )
+
+        state.status = "coding"
+        save_json(state.model_dump(), STATE_PATH)
 
     st.markdown(
         _handoff_msg(len(methodology_result["output_files"]), "CODER AGENT"),
