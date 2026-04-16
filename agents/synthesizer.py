@@ -17,6 +17,7 @@ _client: OpenAI | None = None
 STATE_PATH = "workspace/state.json"
 COMBINED_RESEARCH_TEMPLATE = "workspace/raw_research/{task_id}_combined.json"
 PROTOCOL_TEMPLATE = "workspace/extracted_protocols/protocol_{task_id}.json"
+ENRICHMENT_LOG_TEMPLATE = "workspace/extracted_protocols/enrichment_{task_id}.json"
 WET_SCRIPT_TEMPLATE = "workspace/generated_code/protocol_{task_id}.py"
 DRY_RUN_LOG_TEMPLATE = "workspace/generated_code/dry_lab_{task_id}_run.json"
 REPORT_TEMPLATE = "workspace/final_reports/report_{task_id}.md"
@@ -56,7 +57,7 @@ The Markdown report MUST include these sections IN THIS EXACT ORDER (use clear #
 1. ## Protocol summary — Summarize what the paper / protocol describes (physical methodology, goal, key steps).
 2. ## Generated Opentrons script — Include the FULL Python script provided in the user context inside ONE fenced code block with language tag python (```python ... ```).
 3. ## Simulation result — State Pass or Fail based on the coding state. Include any warnings or notable messages from simulation output if provided.
-4. ## Confidence notes from extraction — List any null or missing fields in the protocol JSON, and every item from extraction_notes. If none, state that clearly.
+4. ## Confidence notes from extraction — If `pie_ran` is true in the protocol JSON (or an enrichment log is provided), lead with a PIE summary: state how many gaps were identified and how many were filled, list each filled field with its confidence score and source URL, list any conflicts that were not applied and why, and list fields still null after enrichment with the stated reasons. Then list any remaining items from extraction_notes. If PIE did not run, list null fields and extraction_notes as before.
 5. ## Source citations — List source URLs with short labels; use the URLs from the research bundle (all_sources, search results, extraction_url, etc.).
 
 Base every factual claim on the provided JSON and text. Do not invent URLs or simulation outcomes not supported by the context. If something is unknown from the inputs, say so briefly."""
@@ -228,6 +229,14 @@ def _build_user_payload(
     research_bundle = _collect_research_bundle(state, task_id)
     generated = _collect_generated_code_artifacts(mode, task_id, state)
 
+    # PIE enrichment log (wet lab only — file may not exist for dry lab or pre-PIE runs)
+    enrichment_section = ""
+    if mode == "wet_lab":
+        enrichment_path = ENRICHMENT_LOG_TEMPLATE.format(task_id=task_id)
+        _, enrichment_text = _read_file_if_exists(enrichment_path)
+        if enrichment_text:
+            enrichment_section = f"\n--- PIE Enrichment Log ({enrichment_path}) ---\n{enrichment_text}\n"
+
     parts = [
         f"Task ID: {task_id}",
         f"Mode: {mode}",
@@ -237,7 +246,7 @@ def _build_user_payload(
         f"Protocol / extraction JSON path: {protocol_path}",
         "--- Protocol JSON ---",
         protocol_text if protocol_text else "<missing or not found>",
-        "",
+        enrichment_section,
         "--- Raw research files (includes combined sources) ---",
         research_bundle,
         "",
