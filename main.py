@@ -829,17 +829,22 @@ if run_clicked and user_input.strip():
 
     ts = _now()
     ph_coder = st.empty()
+    if mode_key == "wet_lab":
+        _coder_running_lines = [
+            ("dim", f"> [{ts}]  protocol file: protocol_{task_id}.json"),
+            ("dim", f"> [{ts}]  initializing coder agent..."),
+            ("",    f"> [{ts}]  generating Opentrons script via GPT-5.4 mini..."),
+            ("",    f"> [{ts}]  spawning Daytona sandbox..."),
+        ]
+    else:
+        _coder_running_lines = [
+            ("dim", f"> [{ts}]  protocol file: protocol_{task_id}.json"),
+            ("dim", f"> [{ts}]  initializing coder agent..."),
+            ("",    f"> [{ts}]  cloning GitHub repo into sandbox..."),
+            ("",    f"> [{ts}]  installing dependencies..."),
+        ]
     ph_coder.markdown(
-        _terminal_panel(
-            "CODER AGENT",
-            [
-                ("dim", f"> [{ts}]  protocol file: protocol_{task_id}.json"),
-                ("dim", f"> [{ts}]  initializing coder agent..."),
-                ("",    f"> [{ts}]  generating Opentrons script via GPT-5.4 mini..."),
-                ("",    f"> [{ts}]  spawning Daytona sandbox..."),
-            ],
-            "running",
-        ),
+        _terminal_panel("CODER AGENT", _coder_running_lines, "running"),
         unsafe_allow_html=True,
     )
 
@@ -848,11 +853,12 @@ if run_clicked and user_input.strip():
     except Exception:
         tb = traceback.format_exc()
         ts = _now()
+        _crash_context = "spawning Daytona sandbox..." if mode_key == "wet_lab" else "running in sandbox..."
         ph_coder.markdown(
             _terminal_panel(
                 "CODER AGENT",
                 [
-                    ("dim",   f"> [{ts}]  spawning Daytona sandbox..."),
+                    ("dim",   f"> [{ts}]  {_crash_context}"),
                     ("error", f"> [{ts}]  UNHANDLED EXCEPTION:"),
                     ("error", f"> [{ts}]  {tb[:1500]}"),
                     ("error", f"> [{ts}]  status: CRASHED"),
@@ -874,41 +880,66 @@ if run_clicked and user_input.strip():
         state.errors.append(coder_result["message"])
         state.status = "error"
         save_json(state.model_dump(), STATE_PATH)
+        if mode_key == "wet_lab":
+            _coder_err_lines = [
+                ("",      f"> [{ts}]  sandbox created, uploading protocol.py..."),
+                ("",      f"> [{ts}]  running opentrons_simulate..."),
+                ("warn",  f"> [{ts}]  simulation failed — attempted {retry} LLM fix(es)"),
+                ("error", f"> [{ts}]  ERROR: {coder_result.get('message', 'Unknown error')}"),
+                ("dim",   f"> [{ts}]  sandbox cleaned up"),
+                ("error", f"> [{ts}]  status: FAILED after {retry} retries"),
+            ]
+        else:
+            _coder_err_lines = [
+                ("",      f"> [{ts}]  repo cloned, installing dependencies..."),
+                ("",      f"> [{ts}]  running entry point..."),
+                ("warn",  f"> [{ts}]  execution failed"),
+                ("error", f"> [{ts}]  ERROR: {coder_result.get('message', 'Unknown error')}"),
+                ("dim",   f"> [{ts}]  sandbox cleaned up"),
+                ("error", f"> [{ts}]  status: FAILED"),
+            ]
         ph_coder.markdown(
-            _terminal_panel(
-                "CODER AGENT",
-                [
-                    ("",      f"> [{ts}]  sandbox created, uploading protocol.py..."),
-                    ("",      f"> [{ts}]  running opentrons_simulate..."),
-                    ("warn",  f"> [{ts}]  simulation failed — attempted {retry} LLM fix(es)"),
-                    ("error", f"> [{ts}]  ERROR: {coder_result.get('message', 'Unknown error')}"),
-                    ("dim",   f"> [{ts}]  sandbox cleaned up"),
-                    ("error", f"> [{ts}]  status: FAILED after {retry} retries"),
-                ],
-                "error",
-            ),
+            _terminal_panel("CODER AGENT", _coder_err_lines, "error"),
             unsafe_allow_html=True,
         )
         st.stop()
 
     coder_retry = coder_result.get("retry_count", 0)
     script_file = coder_result["output_files"][0] if coder_result["output_files"] else "N/A"
-    coder_lines = [
-        ("dim",     f"> [{ts}]  protocol_{task_id}.json loaded and validated"),
-        ("",        f"> [{ts}]  GPT-5.4 mini script generation complete"),
-        ("",        f"> [{ts}]  Daytona sandbox created, installing opentrons..."),
-        ("",        f"> [{ts}]  uploading protocol.py, running opentrons_simulate..."),
-    ]
-    if coder_retry > 0:
-        coder_lines.append(("warn", f"> [{ts}]  simulation fix applied: {coder_retry} retry attempt(s)"))
+    if mode_key == "wet_lab":
+        coder_lines = [
+            ("dim",     f"> [{ts}]  protocol_{task_id}.json loaded and validated"),
+            ("",        f"> [{ts}]  GPT-5.4 mini script generation complete"),
+            ("",        f"> [{ts}]  Daytona sandbox created, installing opentrons..."),
+            ("",        f"> [{ts}]  uploading protocol.py, running opentrons_simulate..."),
+        ]
+        if coder_retry > 0:
+            coder_lines.append(("warn", f"> [{ts}]  simulation fix applied: {coder_retry} retry attempt(s)"))
+        else:
+            coder_lines.append(("dim", f"> [{ts}]  opentrons_simulate passed on first attempt"))
+        coder_lines += [
+            ("success", f"> [{ts}]  simulation: PASSED"),
+            ("success", f"> [{ts}]  script saved to {script_file}"),
+            ("dim",     f"> [{ts}]  sandbox cleaned up"),
+            ("success", f"> [{ts}]  status: SUCCESS"),
+        ]
     else:
-        coder_lines.append(("dim", f"> [{ts}]  opentrons_simulate passed on first attempt"))
-    coder_lines += [
-        ("success", f"> [{ts}]  simulation: PASSED"),
-        ("success", f"> [{ts}]  script saved to {script_file}"),
-        ("dim",     f"> [{ts}]  sandbox cleaned up"),
-        ("success", f"> [{ts}]  status: SUCCESS"),
-    ]
+        coder_lines = [
+            ("dim",     f"> [{ts}]  protocol_{task_id}.json loaded and validated"),
+            ("",        f"> [{ts}]  GitHub repo cloned into sandbox"),
+            ("",        f"> [{ts}]  dependencies installed"),
+            ("",        f"> [{ts}]  entry point executed"),
+        ]
+        if coder_retry > 0:
+            coder_lines.append(("warn", f"> [{ts}]  execution required {coder_retry} retry attempt(s)"))
+        else:
+            coder_lines.append(("dim", f"> [{ts}]  entry point passed on first attempt"))
+        coder_lines += [
+            ("success", f"> [{ts}]  execution: PASSED"),
+            ("success", f"> [{ts}]  artifacts saved to {script_file}"),
+            ("dim",     f"> [{ts}]  sandbox cleaned up"),
+            ("success", f"> [{ts}]  status: SUCCESS"),
+        ]
     ph_coder.markdown(
         _terminal_panel("CODER AGENT", coder_lines, "success"),
         unsafe_allow_html=True,
