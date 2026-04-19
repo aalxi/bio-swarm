@@ -50,14 +50,27 @@ You MUST respond with ONLY valid JSON containing exactly one key:
 }
 
 Code requirements:
-- Use Opentrons API v2. Include metadata: metadata = {"apiLevel": "2.13"} and
-  run(protocol_context) with @protocol_api.protocol_api.api_protocol_decorators.requires_version(2, 13)
-  or the standard load API pattern with api_level="2.13" as appropriate for API v2.13.
-- Import from opentrons import protocol_api, types as needed.
+- Use Opentrons API v2 with this exact structure (no decorators):
+    from opentrons import protocol_api
+    metadata = {"apiLevel": "2.13"}
+    def run(protocol: protocol_api.ProtocolContext):
+        ...
+- Do NOT use @requires_version or any other decorator on run().
 - Load all labware and pipettes implied by the protocol JSON (labware_setup, pipettes).
+- Use ONLY standard Opentrons labware API names. Common valid names:
+    opentrons_96_tiprack_300ul, opentrons_96_tiprack_20ul,
+    opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap,
+    opentrons_96_wellplate_200ul_pcr_full_skirt,
+    nest_96_wellplate_200ul_flat, nest_12_reservoir_15ml,
+    corning_384_wellplate_112ul_flat, opentrons_10_tuberack_falcon_4x50ml_6x15ml_conical,
+    agilent_1_reservoir_290ml, usascientific_96_wellplate_2.4ml_deep
+  If the protocol JSON contains a non-standard labware name, substitute the closest
+  standard Opentrons labware. Add a comment noting the substitution.
+- Use ONLY standard pipette names: p20_single_gen2, p300_single_gen2, p1000_single_gen2,
+  p20_multi_gen2, p300_multi_gen2.
 - Implement every sequential step: transfers, distribute, consolidate, mix, etc.
 - For incubate, centrifuge, or other steps that cannot be fully expressed in simulation,
-  still structure the deck and add comments.
+  add protocol.comment() and protocol.delay() calls where appropriate.
 - Whenever a field in the source JSON is null or missing for a step, do not guess values.
   Instead add a comment line exactly in this form for that step or field:
   # SKIPPED: <short note explaining what was null or ambiguous>
@@ -72,7 +85,15 @@ Return ONLY valid JSON with exactly one key:
 { "script": "<complete fixed Python source as a single string>" }
 
 Requirements:
-- Preserve apiLevel 2.13 and API v2 usage.
+- Use the standard API v2 structure: metadata = {"apiLevel": "2.13"}, def run(protocol): ...
+- Do NOT use decorators on run(). Do NOT use @requires_version.
+- If the error is "Unable to find a labware definition", replace the invalid labware name
+  with a standard Opentrons labware. Common valid names:
+    opentrons_96_tiprack_300ul, opentrons_96_tiprack_20ul,
+    opentrons_96_wellplate_200ul_pcr_full_skirt, nest_96_wellplate_200ul_flat,
+    corning_384_wellplate_112ul_flat, nest_12_reservoir_15ml,
+    opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap
+- If the error is an AttributeError on protocol_api, fix the import/API usage.
 - Keep # SKIPPED: comments for any still-null protocol fields.
 - Address the simulation error shown; return the full corrected script, not a diff.
 """
@@ -122,6 +143,21 @@ def _extract_script(data: dict[str, Any]) -> str:
     if not isinstance(script, str) or not script.strip():
         raise ValueError('LLM JSON must contain non-empty string "script"')
     return script
+
+
+# Opentrons pipette/protocol method calls that constitute actual liquid handling.
+# A generated script with ZERO of these is a silent no-op — simulation passes trivially.
+_LIQUID_HANDLING_RE = re.compile(
+    r"\.(transfer|distribute|consolidate|aspirate|dispense|mix|blow_out|pick_up_tip|drop_tip)\s*\("
+)
+
+
+def _count_liquid_handling_calls(script: str) -> int:
+    return len(_LIQUID_HANDLING_RE.findall(script))
+
+
+def _count_skipped_markers(script: str) -> int:
+    return len(re.findall(r"#\s*SKIPPED\s*:", script))
 
 
 def _generate_opentrons_script(protocol: dict[str, Any]) -> str:
@@ -233,12 +269,31 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
             _log(f"simulate stdout:\n{last_sim_out[:2000]}")
 
             if sim["success"]:
+                lh_calls = _count_liquid_handling_calls(script)
+                skipped = _count_skipped_markers(script)
+                if lh_calls == 0:
+                    save_text(script, out_path)
+                    _log(
+                        f"FAILED: simulation passed but script has no liquid-handling calls "
+                        f"(SKIPPED markers={skipped}). Treating as silent no-op."
+                    )
+                    return _contract(
+                        "error",
+                        [out_path],
+                        "Generated protocol has no liquid-handling steps — "
+                        "all steps were skipped due to missing volumes/targets",
+                        internal_retries,
+                        f"liquid_handling_calls=0, skipped_markers={skipped}. "
+                        f"Simulation stdout:\n{last_sim_out[:1500]}",
+                    )
                 save_text(script, out_path)
                 msg = (
                     f"Opentrons protocol simulated successfully after "
-                    f"{internal_retries} fix attempt(s). Saved to {out_path}"
+                    f"{internal_retries} fix attempt(s). Saved to {out_path} "
+                    f"({lh_calls} liquid-handling calls, {skipped} SKIPPED)"
                     if internal_retries
-                    else f"Opentrons protocol simulated successfully. Saved to {out_path}"
+                    else f"Opentrons protocol simulated successfully. Saved to {out_path} "
+                    f"({lh_calls} liquid-handling calls, {skipped} SKIPPED)"
                 )
                 _log(f"SUCCESS: {msg}")
                 return _contract(
@@ -329,17 +384,7 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
             "github_url is null or missing",
         )
 
-    if not target.main_script:
-        return _contract(
-            "error",
-            [],
-            "No main_script in reproducibility target",
-            0,
-            "main_script is null or missing",
-        )
-
-    main_rel = target.main_script.strip().lstrip("/")
-    remote_main = f"/home/daytona/repo/{main_rel}"
+    main_script: str | None = target.main_script
 
     global _stage_start
     _stage_start = time.monotonic()
@@ -365,6 +410,117 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
             )
         _log("Repo cloned successfully.")
 
+        # ── Verify extracted main_script exists; fall back to discovery ──
+        # Methodology agent occasionally hallucinates entry-point filenames
+        # (e.g. "oneliner.repurpose"). Always verify before trusting.
+        if main_script:
+            main_check = daytona_tool.run_cmd(
+                sandbox,
+                f"test -f \"/home/daytona/repo/{main_script.strip().lstrip('/')}\" && echo YES || echo NO",
+                timeout=5,
+            )
+            if "YES" not in (main_check["stdout"] or ""):
+                _log(
+                    f"main_script '{main_script}' does not exist in repo — "
+                    "falling back to discovery"
+                )
+                main_script = None
+
+        # ── Discover main_script if not provided ──────────────────────────
+        if not main_script:
+            _log("main_script not provided — scanning repo for entry point...")
+            # Search up to depth 4 — tutorial notebooks often live under
+            # docs/tutorials/ or examples/ in library-style repos.
+            py_find = daytona_tool.run_cmd(
+                sandbox,
+                "find /home/daytona/repo -maxdepth 4 -type f "
+                "\\( -name 'main.py' -o -name 'run.py' -o -name 'train.py' "
+                "-o -name 'app.py' -o -name 'run_experiments.py' -o -name 'demo.py' "
+                "-o -name 'example.py' -o -name 'reproduce.py' \\) "
+                "! -path '*/.git/*' ! -path '*/tests/*' ! -path '*/test/*' "
+                "2>/dev/null | head -10",
+                timeout=15,
+            )
+            py_candidates = [
+                f.strip() for f in (py_find["stdout"] or "").splitlines() if f.strip()
+            ]
+            _log(f"Python script candidates: {py_candidates}")
+
+            nb_find = daytona_tool.run_cmd(
+                sandbox,
+                "find /home/daytona/repo -maxdepth 4 -type f -name '*.ipynb' "
+                "! -path '*/.ipynb_checkpoints/*' ! -path '*/.git/*' "
+                "! -path '*/node_modules/*' "
+                "2>/dev/null | head -30",
+                timeout=15,
+            )
+            nb_candidates = [
+                f.strip() for f in (nb_find["stdout"] or "").splitlines() if f.strip()
+            ]
+            # Prioritize notebooks under tutorial/example/demo/notebook directories
+            _preferred_dirs = ("tutorial", "example", "demo", "notebook", "quickstart", "getting_started")
+            nb_candidates.sort(
+                key=lambda p: (
+                    0 if any(d in p.lower() for d in _preferred_dirs) else 1,
+                    p.count("/"),
+                )
+            )
+            _log(f"Notebook candidates: {nb_candidates}")
+
+            readme_run_cmd = daytona_tool.run_cmd(
+                sandbox,
+                "grep -i -E '(python |python3 |jupyter |nbconvert|^\\s*run)' "
+                "/home/daytona/repo/README.md 2>/dev/null | head -5",
+                timeout=10,
+            )
+            readme_hints = (readme_run_cmd["stdout"] or "").strip()
+            if readme_hints:
+                _log(f"README run hints: {readme_hints[:300]}")
+
+            # Prefer .py scripts by priority
+            py_priority = ["main.py", "run.py", "train.py", "app.py", "run_experiments.py"]
+            chosen = None
+            for name in py_priority:
+                for c in py_candidates:
+                    if c.endswith(f"/{name}"):
+                        chosen = c
+                        break
+                if chosen:
+                    break
+            if not chosen and py_candidates:
+                chosen = py_candidates[0]
+
+            # Fall back to notebooks if no .py found
+            if not chosen and nb_candidates:
+                nb_preferred = ["run", "main", "demo", "reproduce", "example", "usage", "tutorial", "getting_started"]
+                for keyword in nb_preferred:
+                    for c in nb_candidates:
+                        if keyword in os.path.basename(c).lower():
+                            chosen = c
+                            break
+                    if chosen:
+                        break
+                if not chosen:
+                    chosen = nb_candidates[0]
+
+            if chosen:
+                main_script = chosen.replace("/home/daytona/repo/", "").lstrip("/")
+                _log(f"Discovered entry point: {main_script}")
+            else:
+                _log("FAILED: no entry point found in cloned repo")
+                return _contract(
+                    "error",
+                    [],
+                    "No main_script provided and none discovered in repo",
+                    0,
+                    f"Searched for .py scripts and .ipynb notebooks in cloned repo. "
+                    f"README hints: {readme_hints[:200]}",
+                )
+
+        main_rel = main_script.strip().lstrip("/")
+        remote_main = f"/home/daytona/repo/{main_rel}"
+        is_notebook = main_rel.endswith(".ipynb")
+
         # ── uv + Python 3.11 venv setup ──────────────────────────────────
         _log("Installing Python 3.11 via uv (timeout=120s)...")
         uv_py = daytona_tool.run_cmd(sandbox, f"{UV} python install 3.11", timeout=120)
@@ -375,20 +531,75 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
         uv_venv = daytona_tool.run_cmd(sandbox, f"{UV} venv --python 3.11 {VENV}", timeout=60)
         _log(f"uv venv exit_code={uv_venv['exit_code']} success={uv_venv['success']}")
 
-        # ── Upload inline requirements if provided ────────────────────────
+        # ── Upload inline requirements only if repo has none ─────────────
+        # The LLM-reconstructed requirements_file is often malformed
+        # (indented lines, partial quotes, fragments). Trust the repo's
+        # own requirements.txt whenever it exists.
         if target.requirements_file and target.requirements_file.strip():
-            _log("Uploading inline requirements.txt...")
-            daytona_tool.upload_file(
+            existing = daytona_tool.run_cmd(
                 sandbox,
-                target.requirements_file,
-                "/home/daytona/repo/requirements.txt",
+                "test -f /home/daytona/repo/requirements.txt && echo YES || echo NO",
+                timeout=5,
             )
+            if (existing["stdout"] or "").strip() == "NO":
+                _log("Uploading inline requirements.txt (repo has none)...")
+                daytona_tool.upload_file(
+                    sandbox,
+                    target.requirements_file,
+                    "/home/daytona/repo/requirements.txt",
+                )
+            else:
+                _log("Repo already has requirements.txt — ignoring LLM-extracted requirements_file")
+
+        # ── CPU-only torch handling ──────────────────────────────────────
+        # torch 2.x + its transitive nvidia-* deps total ~2GB, blowing the
+        # Daytona sandbox disk. Strategy: strip torch and nvidia-* lines
+        # from requirements.txt, install torch from the CPU-only index,
+        # then install the remaining requirements. The CPU torch build
+        # satisfies downstream imports without pulling CUDA libs.
+        torch_probe = daytona_tool.run_cmd(
+            sandbox,
+            "grep -l -i -E '^\\s*torch([=<>!~ ]|$)' "
+            "/home/daytona/repo/requirements.txt "
+            "/home/daytona/repo/pyproject.toml "
+            "/home/daytona/repo/setup.py 2>/dev/null | head -1",
+            timeout=10,
+        )
+        if (torch_probe["stdout"] or "").strip():
+            _log("torch detected in requirements — stripping torch/nvidia-* lines...")
+            daytona_tool.run_cmd(
+                sandbox,
+                "sed -i -E '/^[[:space:]]*(torch([=<>!~[:space:]]|$)|"
+                "torchvision|torchaudio|nvidia[-_])/d' "
+                "/home/daytona/repo/requirements.txt 2>/dev/null || true",
+                timeout=10,
+            )
+            _log("Pre-installing CPU-only torch (timeout=600s)...")
+            cpu_torch = daytona_tool.run_cmd(
+                sandbox,
+                f"{UV} pip install --python {VENV} "
+                f"--index-url https://download.pytorch.org/whl/cpu torch",
+                timeout=600,
+            )
+            _log(f"cpu torch install exit_code={cpu_torch['exit_code']} success={cpu_torch['success']}")
+            _log(f"cpu torch stdout tail:\n{(cpu_torch['stdout'] or '')[-1200:]}")
+            if not cpu_torch["success"]:
+                _log("WARNING: CPU torch preinstall failed — main install may still try CUDA build")
 
         # ── Install dependencies via venv pip ─────────────────────────────
         _log("Installing requirements via venv pip (timeout=600s)...")
         req_check = daytona_tool.run_cmd(
             sandbox,
-            f"bash -c 'if [ -f /home/daytona/repo/requirements.txt ]; then {VENV}/bin/pip install -r /home/daytona/repo/requirements.txt; else echo NO_REQUIREMENTS_FILE; fi'",
+            (
+                f"bash -c '"
+                f"if [ -f /home/daytona/repo/requirements.txt ]; then "
+                f"  {UV} pip install --python {VENV} -r /home/daytona/repo/requirements.txt; "
+                f"elif [ -f /home/daytona/repo/pyproject.toml ] || [ -f /home/daytona/repo/setup.py ]; then "
+                f"  {UV} pip install --python {VENV} /home/daytona/repo; "
+                f"else "
+                f"  echo NO_REQUIREMENTS_FILE; "
+                f"fi'"
+            ),
             timeout=600,
         )
         _log(f"pip install exit_code={req_check['exit_code']} success={req_check['success']}")
@@ -497,9 +708,142 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
         readme_head = (readme_cmd["stdout"] or "").strip()
         _log(f"README preview: {len(readme_head)} chars")
 
-        # ── Execute main script via venv python ───────────────────────────
-        _log(f"Running main script: {remote_main} (timeout=600s)...")
-        run_cmd_str = f"bash -c '{VENV}/bin/python \"{remote_main}\" 2>&1'"
+        # ── Install notebook tooling + extra deps if needed ─────────────
+        if is_notebook:
+            _log("Notebook detected — installing nbconvert + ipykernel...")
+            nb_pip = daytona_tool.run_cmd(
+                sandbox,
+                f"{UV} pip install --python {VENV} nbconvert ipykernel",
+                timeout=180,
+            )
+            _log(f"nbconvert install exit_code={nb_pip['exit_code']} success={nb_pip['success']}")
+            if not nb_pip["success"]:
+                return _contract(
+                    "error",
+                    [],
+                    "pip install nbconvert/ipykernel failed in sandbox",
+                    0,
+                    nb_pip["stdout"] or f"exit_code={nb_pip['exit_code']}",
+                )
+
+            # Scan notebook imports and install any missing packages
+            _log("Scanning notebook for import dependencies...")
+            scan_cmd = daytona_tool.run_cmd(
+                sandbox,
+                f"{VENV}/bin/python -c \""
+                "import json, re; "
+                f"nb = json.load(open('{remote_main}')); "
+                "imports = set(); "
+                "[imports.update(re.findall(r'^(?:import|from)\\s+(\\w+)', "
+                "'\\n'.join(c.get('source',['']) if isinstance(c.get('source'),list) else [c.get('source','')]), re.MULTILINE)) "
+                "for c in nb.get('cells',[]) if c.get('cell_type')=='code']; "
+                "print('\\n'.join(sorted(imports)))"
+                "\"",
+                timeout=15,
+            )
+            raw_imports = [
+                m.strip() for m in (scan_cmd["stdout"] or "").splitlines() if m.strip()
+            ]
+            _log(f"Notebook imports detected: {raw_imports}")
+            # Map common import names to pip package names
+            _IMPORT_TO_PKG = {
+                "sklearn": "scikit-learn",
+                "cv2": "opencv-python",
+                "PIL": "Pillow",
+                "skimage": "scikit-image",
+                "yaml": "pyyaml",
+                "bs4": "beautifulsoup4",
+                "Bio": "biopython",
+                "umap": "umap-learn",
+                "lxml": "lxml",
+                "wx": "wxPython",
+                "gi": "PyGObject",
+                "attr": "attrs",
+            }
+            # Skip stdlib, Jupyter internals, and subpackages of other packages
+            _SKIP = {
+                "os", "sys", "re", "json", "math", "time", "datetime", "collections",
+                "itertools", "functools", "pathlib", "io", "copy", "csv", "typing",
+                "warnings", "abc", "logging", "subprocess", "random", "string",
+                "struct", "operator", "contextlib", "hashlib", "base64", "textwrap",
+                "shutil", "glob", "tempfile", "unittest", "argparse", "ast",
+                "pprint", "zipfile", "tarfile", "gzip", "pickle", "sqlite3",
+                "threading", "multiprocessing", "concurrent", "signal", "socket",
+                "http", "urllib", "ftplib", "email", "html", "xml",
+                "IPython", "ipykernel", "nbconvert", "nbformat",
+                # Subpackages bundled with their parent (not standalone PyPI packages)
+                "mpl_toolkits", "pkg_resources", "distutils", "setuptools",
+                "encodings", "importlib", "ctypes", "builtins",
+            }
+            # Filter to imports not in stdlib/skip
+            candidate_imports = [m for m in raw_imports if m not in _SKIP]
+
+            # Check which are already importable in the venv
+            if candidate_imports:
+                import_checks = " and ".join(
+                    f"__import__('{m}')" for m in candidate_imports
+                )
+                # Write a small Python script to the sandbox for reliable multi-line execution
+                check_code = "import importlib, sys\\n"
+                for m in candidate_imports:
+                    check_code += (
+                        f"try:\\n"
+                        f"    importlib.import_module('{m}')\\n"
+                        f"    print('OK:{m}')\\n"
+                        f"except ImportError:\\n"
+                        f"    print('MISS:{m}')\\n"
+                    )
+                daytona_tool.upload_file(
+                    sandbox, check_code.replace("\\n", "\n"), "/tmp/_check_imports.py"
+                )
+                chk = daytona_tool.run_cmd(
+                    sandbox,
+                    f"{VENV}/bin/python /tmp/_check_imports.py",
+                    timeout=15,
+                )
+                missing_imports = [
+                    line.split(":", 1)[1]
+                    for line in (chk["stdout"] or "").splitlines()
+                    if line.startswith("MISS:")
+                ]
+                already = [
+                    line.split(":", 1)[1]
+                    for line in (chk["stdout"] or "").splitlines()
+                    if line.startswith("OK:")
+                ]
+                _log(f"Already importable: {already}")
+                _log(f"Missing imports: {missing_imports}")
+            else:
+                missing_imports = []
+
+            pkgs_to_install = sorted(set(
+                _IMPORT_TO_PKG.get(m, m) for m in missing_imports
+            ))
+
+            if pkgs_to_install:
+                pkg_str = " ".join(pkgs_to_install)
+                _log(f"Installing notebook extra deps: {pkg_str}")
+                extras_pip = daytona_tool.run_cmd(
+                    sandbox,
+                    f"{UV} pip install --python {VENV} {pkg_str}",
+                    timeout=300,
+                )
+                _log(f"extras install exit_code={extras_pip['exit_code']} success={extras_pip['success']}")
+                if not extras_pip["success"]:
+                    _log(f"Some extras failed (non-fatal): {(extras_pip['stdout'] or '')[-500:]}")
+            else:
+                _log("No extra notebook dependencies needed")
+
+        # ── Execute entry point ───────────────────────────────────────────
+        if is_notebook:
+            _log(f"Running notebook: {remote_main} via nbconvert (timeout=600s)...")
+            run_cmd_str = (
+                f"bash -c '{VENV}/bin/jupyter nbconvert --to notebook --execute "
+                f"--ExecutePreprocessor.timeout=600 \"{remote_main}\" 2>&1'"
+            )
+        else:
+            _log(f"Running main script: {remote_main} (timeout=600s)...")
+            run_cmd_str = f"bash -c '{VENV}/bin/python \"{remote_main}\" 2>&1'"
         main_run = daytona_tool.run_cmd(sandbox, run_cmd_str, timeout=600)
         _log(f"Main script exit_code={main_run['exit_code']} success={main_run['success']}")
         _log(f"Main script stdout tail:\n{(main_run['stdout'] or '')[-2000:]}")
@@ -537,6 +881,9 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
             "generated_figures": generated_figures,
         }
         run_log["main_script"] = {
+            "entry_point": main_rel,
+            "is_notebook": is_notebook,
+            "discovered": target.main_script is None,
             "command": run_cmd_str,
             "exit_code": main_run["exit_code"],
             "stdout": main_run["stdout"],

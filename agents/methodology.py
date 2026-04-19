@@ -6,9 +6,11 @@ the output, and saves it to workspace/extracted_protocols/.
 """
 
 import json
+import re
 from openai import OpenAI
 from tools.file_tool import load_json, save_json
 from tools.token_tracker import track_call
+from tools.tavily_tool import search_web
 from schemas.opentrons_schema import OpentronsProtocol
 from schemas.dry_lab_schema import ReproducibilityTarget
 
@@ -79,7 +81,7 @@ You MUST return ONLY valid JSON with these exact fields and types:
 CRITICAL RULES:
 - If a value is ambiguous or not found in the source material, set it to null and add an explanation to extraction_notes[].
 - Do NOT hallucinate or invent values. Only use data present in the source.
-- github_url must be a real URL found in the research data, or null.
+- For github_url: extract any URLs that point to github.com found in the research data. If the paper mentions a software tool/package name (e.g. "SCANPY", "DeepChem", "Cellpose"), look for github.com/<author>/<package-name> patterns in the research content. If no github link is found in the source, set to null and note it in extraction_notes.
 - Return ONLY the JSON object, no other text.
 """
 
@@ -188,6 +190,41 @@ def _validate(data: dict, mode: str):
         return ReproducibilityTarget(**data)
 
 
+def _find_missing_github_url(extracted: dict, mode: str) -> str | None:
+    """For dry lab mode: if github_url is null, try to find it by searching for package name + github.
+
+    Extracts a package/tool name from paper_title and searches for its GitHub repository.
+    Returns the GitHub URL if found, otherwise None.
+    """
+    if mode != "dry_lab" or extracted.get("github_url"):
+        return None
+
+    paper_title = extracted.get("paper_title", "")
+
+    # Try to find a package name (usually the first capitalized word or acronym)
+    # Examples: "SCANPY", "DeepChem", "Cellpose"
+    words = paper_title.split()
+    package_names = [w.strip(".,;:") for w in words if w and (w[0].isupper() or w.isupper())]
+
+    if not package_names:
+        return None
+
+    # Try each candidate package name
+    for pkg in package_names[:3]:  # Try first 3 candidates
+        try:
+            results = search_web(f"{pkg} github repository", max_results=3, search_depth="basic")
+            for r in results:
+                url = r.get("url", "")
+                if "github.com" in url:
+                    # Make sure it's actually the package repo, not someone's fork
+                    if pkg.lower() in url.lower():
+                        return url
+        except Exception:
+            pass  # Silent fail, return None below
+
+    return None
+
+
 def methodology_agent(researcher_result: dict, task_id: str) -> dict:
     """Run the Methodology Agent pipeline.
 
@@ -262,6 +299,18 @@ def methodology_agent(researcher_result: dict, task_id: str) -> dict:
                     f"Second attempt error: {second_error}"
                 ),
             }
+
+    # Step 4b: For dry lab mode, try to find missing GitHub URL
+    if mode == "dry_lab" and not validated.github_url:
+        try:
+            found_url = _find_missing_github_url(extracted, mode)
+            if found_url:
+                # Update the validated object with the found URL
+                data = validated.model_dump()
+                data["github_url"] = found_url
+                validated = _validate(data, mode)
+        except Exception:
+            pass  # Silent fail, keep validated as-is with null github_url
 
     # Step 5: Save validated output
     protocol_path = f"workspace/extracted_protocols/protocol_{task_id}.json"

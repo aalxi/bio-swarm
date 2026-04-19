@@ -1,9 +1,10 @@
 # supervisor.py — PI Agent: orchestrates the pipeline, owns state.json
 
 from schemas.state_schema import WorkspaceState
-from tools.file_tool import save_json
+from tools.file_tool import load_json, save_json
 from agents.researcher import researcher_agent
 from agents.methodology import methodology_agent
+from agents.enricher import enricher_agent
 from agents.coder import coder_agent
 from agents.synthesizer import synthesizer_agent
 from tools.token_tracker import print_summary as print_token_summary
@@ -70,9 +71,43 @@ def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None)
     state.extraction.done = True
     state.extraction.protocol_file = output_files[0]
     state.extraction.schema_valid = True
-    state.status = "coding"
+    state.status = "enrichment" if mode == "wet_lab" else "coding"
     _save_state(state)
     _notify(status_callback, "Protocol extracted and validated")
+
+    # --- 2b. PIE Enrichment (wet-lab only, non-blocking) ---
+    if mode == "wet_lab":
+        try:
+            enricher_result = enricher_agent(methodology_result, task_id)
+        except Exception as e:
+            enricher_result = _exception_contract(e)
+
+        if enricher_result.get("status") == "success":
+            gaps_filled = enricher_result.get("gaps_filled", 0)
+            elog = enricher_result.get("enrichment_log") or {}
+            if not elog:
+                try:
+                    _proto = load_json(f"workspace/extracted_protocols/protocol_{task_id}.json")
+                    elog = _proto.get("enrichment_log") or {}
+                except Exception:
+                    pass
+            gaps_identified = elog.get("gaps_identified", gaps_filled)
+            state.enrichment.done = True
+            state.enrichment.gaps_identified = gaps_identified
+            state.enrichment.gaps_filled = gaps_filled
+            enr_files = enricher_result.get("output_files", [])
+            if len(enr_files) > 1:
+                state.enrichment.enrichment_file = enr_files[1]
+            _notify(status_callback, f"PIE enrichment complete — {gaps_filled}/{gaps_identified} gaps filled")
+        else:
+            state.enrichment.skipped = True
+            state.errors.append(
+                f"[enrichment] {enricher_result.get('message', 'PIE failed')} — pipeline continues"
+            )
+            _notify(status_callback, "PIE enrichment skipped (non-fatal)")
+
+        state.status = "coding"
+        _save_state(state)
 
     # --- 3. Coder ---
     try:

@@ -183,6 +183,33 @@ def researcher_agent(user_input: str, mode: str, task_id: str) -> dict:
         save_json({"query": query, "results": clean_results, "sources": [r.get("url") for r in results]}, search_file)
         output_files.append(search_file)
 
+    # Step 2b: Dry-lab github bias — if no github URL surfaced, run one targeted query.
+    # Without a repo URL, the dry-lab coder hard-fails at the first step.
+    if mode == "dry_lab" and not any(
+        "github.com" in (r.get("url") or "") for r in all_results
+    ):
+        gh_query = f"{user_input} site:github.com"
+        try:
+            gh_results = search_web(gh_query)
+        except RuntimeError:
+            gh_results = []
+        if gh_results:
+            for r in gh_results:
+                u = r.get("url")
+                if u:
+                    all_sources.append(u)
+            all_results.extend(gh_results)
+            clean = [
+                {"url": r.get("url"), "title": r.get("title"),
+                 "content": r.get("content"), "score": r.get("score")}
+                for r in gh_results
+            ]
+            gh_file = f"workspace/raw_research/{task_id}_search_github.json"
+            save_json({"query": gh_query, "results": clean,
+                       "sources": [r.get("url") for r in gh_results]}, gh_file)
+            output_files.append(gh_file)
+            queries.append(gh_query)
+
     # Step 3: Pick the best URLs for full extraction (top 2)
     extraction_urls = []
     try:
