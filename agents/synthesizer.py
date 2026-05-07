@@ -57,7 +57,17 @@ The Markdown report MUST include these sections IN THIS EXACT ORDER (use clear #
 1. ## Protocol summary — Summarize what the paper / protocol describes (physical methodology, goal, key steps).
 2. ## Generated Opentrons script — Include the FULL Python script provided in the user context inside ONE fenced code block with language tag python (```python ... ```).
 3. ## Simulation result — State Pass or Fail based on the coding state. Include any warnings or notable messages from simulation output if provided.
-4. ## Confidence notes from extraction — If `pie_ran` is true in the protocol JSON (or an enrichment log is provided), lead with a PIE summary: state how many gaps were identified and how many were filled, list each filled field with its confidence score and source URL, list any conflicts that were not applied and why, and list fields still null after enrichment with the stated reasons. Then list any remaining items from extraction_notes. If PIE did not run, list null fields and extraction_notes as before.
+4. ## Confidence notes from extraction — If `pie_ran` is true in the protocol JSON (or an enrichment log is provided), lead with a PIE summary: state how many gaps were identified and how many were filled, list any conflicts that were not applied and why, and list fields still null after enrichment with the stated reasons. Then list any remaining items from extraction_notes. If PIE did not run, list null fields and extraction_notes as before.
+
+   PROVENANCE SENTINEL — Whenever the protocol JSON's `sequential_steps[].field_confidence` or `field_sources` indicates a PIE-filled field, you MUST emit one bullet per (step, field) tuple in this EXACT, machine-parseable, ASCII-ONLY format on its own line:
+
+       - step{step_number}.{field_name}: {value} [unit={unit_or_none}, conf={confidence:.2f}, src={url}]
+
+   Example: `- step3.volume_ul: 5 [unit=uL, conf=0.92, src=https://protocols.io/abc]`
+
+   Use ASCII unit codes only: `uL` (microliters — never µL or μL), `mL`, `s`, `min`, `C`, `rpm`, `none`. Field-to-unit mapping: volume_ul→uL, duration_seconds→s, temperature_celsius→C, speed_rpm→rpm, source_location/destination_location→none. For string-typed values like locations, render the value as-is and use `unit=none`.
+
+   If `field_sources[field]` starts with the literal `notes_mining`, render `src=extraction_notes` instead of a URL. Do NOT omit the bracketed `[unit=..., conf=..., src=...]` segment for any PIE-filled field — future agents parse this back. Use exactly two decimal places for confidence (e.g. `0.92`, not `0.9` or `0.920`).
 5. ## Source citations — List source URLs with short labels; use the URLs from the research bundle (all_sources, search results, extraction_url, etc.).
 
 Base every factual claim on the provided JSON and text. Do not invent URLs or simulation outcomes not supported by the context. If something is unknown from the inputs, say so briefly."""
