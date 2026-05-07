@@ -48,7 +48,7 @@ def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None)
     _emit_end(status_callback, "research", researcher_result)
 
     if researcher_result.get("status") != "success":
-        return _handle_error(state, "research", researcher_result)
+        return _handle_error(state, "research", researcher_result, status_callback)
 
     state.research.done = True
     state.research.files = researcher_result.get("output_files", [])
@@ -64,7 +64,7 @@ def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None)
     _emit_end(status_callback, "extraction", methodology_result)
 
     if methodology_result.get("status") != "success":
-        return _handle_error(state, "extraction", methodology_result)
+        return _handle_error(state, "extraction", methodology_result, status_callback)
 
     output_files = methodology_result.get("output_files", [])
     if not output_files:
@@ -76,7 +76,7 @@ def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None)
             "output_files": [],
         }
         _emit_end(status_callback, "extraction", empty)
-        return _handle_error(state, "extraction", empty)
+        return _handle_error(state, "extraction", empty, status_callback)
 
     state.extraction.done = True
     state.extraction.protocol_file = output_files[0]
@@ -148,7 +148,7 @@ def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None)
     if coder_result.get("status") != "success":
         state.coding.error_log = coder_result.get("error_detail")
         state.coding.retry_count = coder_result.get("retry_count", 0)
-        return _handle_error(state, "coding", coder_result)
+        return _handle_error(state, "coding", coder_result, status_callback)
 
     output_files = coder_result.get("output_files", [])
     if not output_files:
@@ -159,7 +159,7 @@ def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None)
             "retry_count": 0,
             "output_files": [],
         }
-        return _handle_error(state, "coding", empty)
+        return _handle_error(state, "coding", empty, status_callback)
 
     state.coding.done = True
     state.coding.script_file = output_files[0]
@@ -176,7 +176,7 @@ def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None)
     _emit_end(status_callback, "synthesis", synth_result)
 
     if synth_result.get("status") != "success":
-        return _handle_error(state, "synthesis", synth_result)
+        return _handle_error(state, "synthesis", synth_result, status_callback)
 
     output_files = synth_result.get("output_files", [])
     state.synthesis.done = True
@@ -249,17 +249,55 @@ def _exception_contract(exc: Exception) -> dict:
     }
 
 
-def _handle_error(state: WorkspaceState, phase: str, result: dict) -> dict:
-    """Record an agent error in state and return the pipeline error dict."""
+def _handle_error(
+    state: WorkspaceState, phase: str, result: dict, status_callback=None
+) -> dict:
+    """Record an agent error in state, attempt a failure-synth report, and return."""
     msg = result.get("message", "Unknown error")
     detail = result.get("error_detail", "")
     state.errors.append(f"[{phase}] {msg}: {detail}" if detail else f"[{phase}] {msg}")
     state.status = "error"
     _save_state(state)
+
+    # A1: best-effort report generation against partial artifacts. Honors a
+    # one-shot guard so a Synthesizer that itself errors does not recurse.
+    _synthesize_on_failure(state, phase, status_callback)
+
     print_token_summary()
     return {
         "status": "error",
         "task_id": state.task_id,
-        "report_file": None,
+        "report_file": state.synthesis.report_file,
         "state": state.model_dump(),
     }
+
+
+def _synthesize_on_failure(
+    state: WorkspaceState, phase: str, status_callback
+) -> None:
+    """Run the Synthesizer once against a failed pipeline. No-op on re-entry.
+
+    The guard is an explicit flag (state.synthesis.attempted_on_failure), not
+    a phase-name check, because a Synthesizer that raises an exception would
+    funnel through _handle_error a second time with phase="synthesis" — and
+    while we could check that, the flag closes both paths unambiguously.
+    """
+    if state.synthesis.attempted_on_failure:
+        return
+    state.synthesis.attempted_on_failure = True
+    state.synthesis.failed_at_phase = phase
+    _save_state(state)
+
+    _emit_start(status_callback, "synthesis")
+    try:
+        synth_result = synthesizer_agent(state.task_id)
+    except Exception as e:
+        synth_result = _exception_contract(e)
+    _emit_end(status_callback, "synthesis", synth_result)
+
+    if synth_result.get("status") == "success":
+        files = synth_result.get("output_files", [])
+        state.synthesis.report_file = files[0] if files else None
+        state.synthesis.synthesized_on_failure = True
+        state.synthesis.done = True
+        _save_state(state)
