@@ -157,10 +157,42 @@ def _collect_generated_code_artifacts(
                     "simulation_passed": coding.get("simulation_passed"),
                     "error_log": coding.get("error_log"),
                     "retry_count": coding.get("retry_count"),
+                    "fidelity_warning": coding.get("fidelity_warning"),
+                    "liquid_step_coverage": coding.get("liquid_step_coverage"),
+                    "skipped_step_numbers": coding.get("skipped_step_numbers"),
+                    "coverage_method": coding.get("coverage_method"),
+                    "attempts_count": len(coding.get("attempts") or []),
                 },
                 indent=2,
             )
         )
+
+        # A1 — inline each retry attempt's script + stderr so the failure-path
+        # report can show the LLM what was tried. Only emit this section when
+        # there are 2+ attempts (a single attempt is just the final script,
+        # already shown above).
+        attempts = coding.get("attempts") or []
+        if len(attempts) >= 2:
+            chunks.append("\n--- Retry attempts (each attempt's script + stderr) ---\n")
+            for entry in attempts:
+                n = entry.get("attempt", "?")
+                sp = entry.get("script_path", "")
+                ep = entry.get("stderr_path", "")
+                _, script_text = _read_file_if_exists(sp)
+                _, stderr_text = _read_file_if_exists(ep)
+                chunks.append(f"\n=== Attempt {n} script ({sp}) ===\n")
+                chunks.append(script_text if script_text is not None else "<missing>")
+                chunks.append(f"\n=== Attempt {n} stderr ({ep}) ===\n")
+                chunks.append(stderr_text if stderr_text is not None else "<missing>")
+                chunks.append(
+                    f"\n=== Attempt {n} metrics: "
+                    f"exit_code={entry.get('exit_code')} "
+                    f"success={entry.get('success')} "
+                    f"liquid_handling_calls={entry.get('liquid_handling_calls')} "
+                    f"coverage={entry.get('liquid_step_coverage')} "
+                    f"method={entry.get('coverage_method')} ===\n"
+                )
+
         return "\n".join(chunks)
 
     # dry_lab
@@ -237,7 +269,26 @@ def _build_user_payload(
         if enrichment_text:
             enrichment_section = f"\n--- PIE Enrichment Log ({enrichment_path}) ---\n{enrichment_text}\n"
 
+    # A1 — failure context block. When this is set the LLM MUST render a
+    # "Fail at {phase}" verdict and lean on partial artifacts.
+    synthesis_state = state.get("synthesis") or {}
+    failed_at_phase = synthesis_state.get("failed_at_phase")
+    failure_block = ""
+    if failed_at_phase:
+        errors = state.get("errors") or []
+        errors_text = "\n".join(f"  - {e}" for e in errors) or "  (none recorded)"
+        failure_block = (
+            "\n=== FAILURE CONTEXT ===\n"
+            f"The pipeline did NOT complete. It failed at phase: {failed_at_phase}\n"
+            f"Errors recorded:\n{errors_text}\n"
+            "Render a report against partial artifacts. The headline verdict line "
+            f"MUST read exactly: **Verdict:** Fail at {failed_at_phase}\n"
+            "Do not invent successful outcomes for phases that did not run.\n"
+            "=== END FAILURE CONTEXT ===\n"
+        )
+
     parts = [
+        failure_block,
         f"Task ID: {task_id}",
         f"Mode: {mode}",
         f"User input: {state.get('user_input', '')}",
@@ -299,7 +350,12 @@ def synthesizer_agent(task_id: str) -> dict[str, Any]:
     protocol_path = (state.get("extraction") or {}).get(
         "protocol_file"
     ) or PROTOCOL_TEMPLATE.format(task_id=task_id)
-    if not os.path.isfile(protocol_path):
+    failed_at_phase = (state.get("synthesis") or {}).get("failed_at_phase")
+    # When the pipeline failed before extraction completed (research/extraction
+    # phase failures), there is legitimately no protocol on disk. The fail-aware
+    # synth path still wants to render a report against whatever partial artifacts
+    # exist — so we only treat a missing protocol as a hard error on the success path.
+    if not os.path.isfile(protocol_path) and not failed_at_phase:
         return _contract(
             "error",
             [],
