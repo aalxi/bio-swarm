@@ -28,11 +28,19 @@ class CodingState(BaseModel):
     simulation_passed: bool = False
     error_log: Optional[str] = None
     retry_count: int = 0
+    attempts: List[dict] = []
+    liquid_step_coverage: Optional[float] = None
+    fidelity_warning: bool = False
+    skipped_step_numbers: List[int] = []
+    coverage_method: Optional[Literal["markers", "heuristic_fallback"]] = None
 
 
 class SynthesisState(BaseModel):
     done: bool = False
     report_file: Optional[str] = None
+    attempted_on_failure: bool = False
+    synthesized_on_failure: bool = False
+    failed_at_phase: Optional[str] = None
 
 
 class WorkspaceState(BaseModel):
