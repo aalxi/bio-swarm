@@ -36,6 +36,11 @@ def _log(msg: str) -> None:
 # Up to 4 simulation attempts: initial + 3 retries
 WET_LAB_MAX_SIM_ATTEMPTS = 4
 
+# Below this fraction of declared steps emitting any liquid-handling call,
+# even a clean simulation is flagged as a fidelity warning. See B1 in the
+# 2026-05-04 post-mortem: Smart-seq3 silently dropped 8 of 12 steps.
+LIQUID_COVERAGE_THRESHOLD = 0.5
+
 # Shared sandbox constants — used by both wet and dry lab flows
 UV = "/usr/local/py-utils/bin/uv"
 VENV = "/home/daytona/venv311"
@@ -112,6 +117,11 @@ def _contract(
     message: str,
     retry_count: int,
     error_detail: str | None,
+    attempts: list[dict] | None = None,
+    liquid_step_coverage: float | None = None,
+    skipped_step_numbers: list[int] | None = None,
+    coverage_method: str | None = None,
+    fidelity_warning: bool = False,
 ) -> dict[str, Any]:
     return {
         "status": status,
@@ -119,6 +129,11 @@ def _contract(
         "message": message,
         "retry_count": retry_count,
         "error_detail": error_detail,
+        "attempts": attempts if attempts is not None else [],
+        "liquid_step_coverage": liquid_step_coverage,
+        "skipped_step_numbers": skipped_step_numbers if skipped_step_numbers is not None else [],
+        "coverage_method": coverage_method,
+        "fidelity_warning": fidelity_warning,
     }
 
 
@@ -158,6 +173,49 @@ def _count_liquid_handling_calls(script: str) -> int:
 
 def _count_skipped_markers(script: str) -> int:
     return len(re.findall(r"#\s*SKIPPED\s*:", script))
+
+
+_STEP_MARKER_RE = re.compile(r"^#\s*STEP\s+(\d+)\b", re.MULTILINE)
+
+
+def _compute_step_coverage(script: str, total_steps: int) -> tuple[float, list[int], str]:
+    """Return (coverage_ratio, skipped_step_numbers, method).
+
+    method == "markers" when the script contained `# STEP N` markers and we could
+    bucket liquid-handling calls per step.
+    method == "heuristic_fallback" when no markers were present and we fell back to
+    distinct-call-count / total_steps. The fallback is intentionally tagged so the
+    caller can surface "metric is approximate" in the report — see B6 fidelity warnings.
+    """
+    if total_steps <= 0:
+        return 0.0, [], "markers"
+
+    matches = list(_STEP_MARKER_RE.finditer(script))
+    if not matches:
+        # Heuristic fallback: distinct liquid-handling calls / total steps.
+        distinct_calls = _count_liquid_handling_calls(script)
+        ratio = min(distinct_calls / total_steps, 1.0)
+        # We don't know which step numbers were skipped under the heuristic.
+        return ratio, [], "heuristic_fallback"
+
+    # Bucket each liquid-handling call into the step region that contains it.
+    # A region is from one marker to the next (or end-of-string for the last).
+    regions: list[tuple[int, int, int]] = []
+    for i, m in enumerate(matches):
+        step_n = int(m.group(1))
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(script)
+        regions.append((step_n, start, end))
+
+    active_steps: set[int] = set()
+    for step_n, start, end in regions:
+        if _LIQUID_HANDLING_RE.search(script, start, end):
+            active_steps.add(step_n)
+
+    declared_steps = {step_n for step_n, _, _ in regions}
+    skipped = sorted(declared_steps - active_steps)
+    ratio = len(active_steps) / total_steps
+    return ratio, skipped, "markers"
 
 
 def _generate_opentrons_script(protocol: dict[str, Any]) -> str:
@@ -223,6 +281,8 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
     out_path = f"workspace/generated_code/protocol_{task_id}.py"
     internal_retries = 0
     last_sim_out = ""
+    attempts_log: list[dict] = []
+    total_steps = len(raw_protocol.get("sequential_steps") or [])
 
     global _stage_start
     _stage_start = time.monotonic()
@@ -268,9 +328,35 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
             _log(f"opentrons_simulate exit_code={sim['exit_code']} success={sim['success']}")
             _log(f"simulate stdout:\n{last_sim_out[:2000]}")
 
+            attempt_n = attempt + 1
+            attempt_script_path = f"workspace/generated_code/protocol_{task_id}_attempt{attempt_n}.py"
+            attempt_stderr_path = f"workspace/generated_code/protocol_{task_id}_attempt{attempt_n}.stderr"
+            save_text(script, attempt_script_path)
+            save_text(last_sim_out, attempt_stderr_path)
+            attempt_lh_calls = _count_liquid_handling_calls(script)
+            attempt_coverage, attempt_skipped_steps, attempt_method = _compute_step_coverage(
+                script, total_steps
+            )
+            attempts_log.append({
+                "attempt": attempt_n,
+                "script_path": attempt_script_path,
+                "stderr_path": attempt_stderr_path,
+                "exit_code": sim["exit_code"],
+                "success": bool(sim["success"]),
+                "liquid_handling_calls": attempt_lh_calls,
+                "liquid_step_coverage": attempt_coverage,
+                "coverage_method": attempt_method,
+            })
+
             if sim["success"]:
                 lh_calls = _count_liquid_handling_calls(script)
                 skipped = _count_skipped_markers(script)
+                coverage, skipped_step_numbers, coverage_method = _compute_step_coverage(
+                    script, total_steps
+                )
+                low_coverage = coverage < LIQUID_COVERAGE_THRESHOLD
+                heuristic_used = coverage_method == "heuristic_fallback"
+                fidelity_warning = low_coverage or heuristic_used
                 if lh_calls == 0:
                     save_text(script, out_path)
                     _log(
@@ -285,15 +371,22 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                         internal_retries,
                         f"liquid_handling_calls=0, skipped_markers={skipped}. "
                         f"Simulation stdout:\n{last_sim_out[:1500]}",
+                        attempts=attempts_log,
+                        liquid_step_coverage=coverage,
+                        skipped_step_numbers=skipped_step_numbers,
+                        coverage_method=coverage_method,
+                        fidelity_warning=True,
                     )
                 save_text(script, out_path)
                 msg = (
                     f"Opentrons protocol simulated successfully after "
                     f"{internal_retries} fix attempt(s). Saved to {out_path} "
-                    f"({lh_calls} liquid-handling calls, {skipped} SKIPPED)"
+                    f"({lh_calls} liquid-handling calls, {skipped} SKIPPED, "
+                    f"coverage={coverage:.2f} via {coverage_method})"
                     if internal_retries
                     else f"Opentrons protocol simulated successfully. Saved to {out_path} "
-                    f"({lh_calls} liquid-handling calls, {skipped} SKIPPED)"
+                    f"({lh_calls} liquid-handling calls, {skipped} SKIPPED, "
+                    f"coverage={coverage:.2f} via {coverage_method})"
                 )
                 _log(f"SUCCESS: {msg}")
                 return _contract(
@@ -302,6 +395,11 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                     msg,
                     internal_retries,
                     None,
+                    attempts=attempts_log,
+                    liquid_step_coverage=coverage,
+                    skipped_step_numbers=skipped_step_numbers,
+                    coverage_method=coverage_method,
+                    fidelity_warning=fidelity_warning,
                 )
 
             if attempt >= WET_LAB_MAX_SIM_ATTEMPTS - 1:
@@ -312,6 +410,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                     "opentrons_simulate failed after maximum retries",
                     internal_retries,
                     last_sim_out,
+                    attempts=attempts_log,
                 )
 
             internal_retries += 1
@@ -338,6 +437,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                     f"LLM fix failed on retry {internal_retries}",
                     internal_retries,
                     str(e),
+                    attempts=attempts_log,
                 )
 
         return _contract(
@@ -346,6 +446,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
             "Unexpected exit from simulation loop",
             internal_retries,
             last_sim_out,
+            attempts=attempts_log,
         )
     finally:
         daytona_tool.cleanup(daytona, sandbox)
