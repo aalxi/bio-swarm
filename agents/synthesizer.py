@@ -52,12 +52,24 @@ def _system_prompt_wet_lab() -> str:
 You MUST respond with ONLY valid JSON containing exactly one key:
 { "report": "<full Markdown report as a single string; use \\n for newlines inside the string>" }
 
-The Markdown report MUST include these sections IN THIS EXACT ORDER (use clear ## headings):
+VERDICT (ALWAYS the very first line of the report — NO heading, just bold text):
+- If a FAILURE CONTEXT block is provided in the user payload: `**Verdict:** Fail at {phase}` (use the exact phase name from the FAILURE CONTEXT).
+- Else if the coding state shows `simulation_passed=true` AND `fidelity_warning=false`: `**Verdict:** Pass`.
+- Else if `simulation_passed=true` AND `fidelity_warning=true`: `**Verdict:** Pass with caveats`.
+- Else: `**Verdict:** Fail at coding`.
 
-1. ## Protocol summary — Summarize what the paper / protocol describes (physical methodology, goal, key steps).
-2. ## Generated Opentrons script — Include the FULL Python script provided in the user context inside ONE fenced code block with language tag python (```python ... ```).
-3. ## Simulation result — State Pass or Fail based on the coding state. Include any warnings or notable messages from simulation output if provided.
-4. ## Confidence notes from extraction — If `pie_ran` is true in the protocol JSON (or an enrichment log is provided), lead with a PIE summary: state how many gaps were identified and how many were filled, list any conflicts that were not applied and why, and list fields still null after enrichment with the stated reasons. Then list any remaining items from extraction_notes. If PIE did not run, list null fields and extraction_notes as before.
+After the verdict line, the Markdown report MUST include these sections IN THIS EXACT ORDER (use clear ## headings). Section 6 (Retry attempts) is optional — see the rule below.
+
+1. ## Fidelity warnings — A bulleted list of every concern, in this priority order. EMIT THE HEADING EVEN IF EMPTY (write `_No fidelity concerns detected._` as the only body in that case — never omit the section).
+   - If `coding.fidelity_warning` is true and `coding.liquid_step_coverage` is below 0.5: write a bullet like "Only {n}/{total} steps emitted liquid-handling calls; skipped step numbers: {list}". Compute n = round(coverage × total) where total is the number of `sequential_steps` from the protocol JSON.
+   - If `coding.coverage_method == "heuristic_fallback"`: write a bullet starting with "Coverage estimated from heuristic — LLM did not emit `# STEP N` markers; metric is approximate."
+   - For every entry in the PIE `enrichment_log.conflicts` (if present): write one bullet describing the conflict (field, step, candidate values, why it was reverted).
+   - For every entry in the PIE `enrichment_log.still_null` (if present): write one bullet ("step{N}.{field}: still null — {reason}"). These are INFORMATION, not verdict-modifiers.
+   - If the generated script contains `# SKIPPED:` comments: write one bullet ("{count} step fields were skipped during code generation").
+2. ## Protocol summary — Summarize what the paper / protocol describes (physical methodology, goal, key steps).
+3. ## Generated Opentrons script — Include the FULL Python script provided in the user context inside ONE fenced code block with language tag python (```python ... ```).
+4. ## Simulation result — State Pass or Fail based on the coding state. Include any warnings or notable messages from simulation output if provided.
+5. ## Confidence notes from extraction — If `pie_ran` is true in the protocol JSON (or an enrichment log is provided), lead with a PIE summary: state how many gaps were identified and how many were filled, list any conflicts that were not applied and why, and list fields still null after enrichment with the stated reasons. Then list any remaining items from extraction_notes. If PIE did not run, list null fields and extraction_notes as before.
 
    PROVENANCE SENTINEL — Whenever the protocol JSON's `sequential_steps[].field_confidence` or `field_sources` indicates a PIE-filled field, you MUST emit one bullet per (step, field) tuple in this EXACT, machine-parseable, ASCII-ONLY format on its own line:
 
@@ -68,7 +80,8 @@ The Markdown report MUST include these sections IN THIS EXACT ORDER (use clear #
    Use ASCII unit codes only: `uL` (microliters — never µL or μL), `mL`, `s`, `min`, `C`, `rpm`, `none`. Field-to-unit mapping: volume_ul→uL, duration_seconds→s, temperature_celsius→C, speed_rpm→rpm, source_location/destination_location→none. For string-typed values like locations, render the value as-is and use `unit=none`.
 
    If `field_sources[field]` starts with the literal `notes_mining`, render `src=extraction_notes` instead of a URL. Do NOT omit the bracketed `[unit=..., conf=..., src=...]` segment for any PIE-filled field — future agents parse this back. Use exactly two decimal places for confidence (e.g. `0.92`, not `0.9` or `0.920`).
-5. ## Source citations — List source URLs with short labels; use the URLs from the research bundle (all_sources, search results, extraction_url, etc.).
+6. ## Retry attempts — ONLY emit this section when the user payload includes a "Retry attempts" block (i.e. coding.attempts has ≥2 entries). For each attempt, render the attempt number, a fenced ```python code block with the attempt's script, and a fenced ```text block with the attempt's stderr. End each attempt with the metrics line provided in the payload. If no Retry-attempts block is present, OMIT this section entirely (do not write the heading, do not write a placeholder).
+7. ## Source citations — List source URLs with short labels; use the URLs from the research bundle (all_sources, search results, extraction_url, etc.).
 
 Base every factual claim on the provided JSON and text. Do not invent URLs or simulation outcomes not supported by the context. If something is unknown from the inputs, say so briefly."""
 
