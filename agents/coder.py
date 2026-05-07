@@ -81,6 +81,13 @@ Code requirements:
   # SKIPPED: <short note explaining what was null or ambiguous>
 - Include proper labware loading, pipette setup, and all transfer steps that have enough data.
 - The script must be self-contained and pass opentrons_simulate when dependencies are installed.
+- BEFORE emitting the code for each step from sequential_steps, write a marker comment
+  EXACTLY in this form on its own line:
+      # STEP {step_number}
+  Use the literal step_number from the JSON (an integer). Emit the marker even for
+  SKIPPED steps. Do not omit, abbreviate, or rename it. A downstream tool counts
+  liquid-handling calls per marker region to score per-step coverage; missing markers
+  silently degrade the metric to a less accurate fallback.
 """
 
 WET_LAB_FIX_SYSTEM_PROMPT = """\
@@ -100,6 +107,8 @@ Requirements:
     opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap
 - If the error is an AttributeError on protocol_api, fix the import/API usage.
 - Keep # SKIPPED: comments for any still-null protocol fields.
+- PRESERVE every existing `# STEP N` marker comment from the original script.
+  These are tooling sentinels — never delete, renumber, or reformat them.
 - Address the simulation error shown; return the full corrected script, not a diff.
 """
 
