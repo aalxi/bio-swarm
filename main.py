@@ -53,123 +53,124 @@ STATE_PATH = "workspace/state.json"
 
 CSS_BLOCK = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&display=swap');
 
-/* ── Global layout scale ── */
+/* ──────────────────────────────────────────────────────────────────────────
+   Warp-inspired warm dark palette.
+   No bold accents, no animated gradients, no glow effects.
+   Depth comes from semi-transparent borders and warm parchment text.
+   ────────────────────────────────────────────────────────────────────────── */
 :root {
-    --accent: #4db87a;
-    --accent2: #2a7a5e;
-    --accent3: #3a9e6a;
-    --bg: #080808;
-    --surface: #0e0e0e;
-    --border: #1f1f1f;
-    --text: #d8d8d8;
-    --dim: #3a3a3a;
+    /* Backgrounds — warm earthy near-black, never pure #000 */
+    --bg:           #0e0d0c;
+    --surface:      #161513;
+    --surface-2:    rgba(255, 255, 255, 0.04);
+
+    /* Text — warm parchment family, never pure white */
+    --text:         #faf9f6;   /* Warm Parchment — primary text */
+    --text-body:    #afaeac;   /* Ash Gray — body / readable secondary */
+    --text-muted:   #868584;   /* Stone Gray — labels, subdued */
+    --text-dim:     #5a5856;   /* Deeper muted — timestamps, paths */
+
+    /* Borders & buttons — Earth Gray family */
+    --border:       rgba(227, 227, 227, 0.12);
+    --border-soft:  rgba(227, 227, 227, 0.06);
+    --btn-bg:       #353534;   /* Earth Gray pill */
+    --btn-text:     #afaeac;
+
+    /* Status — warm muted, NOT bright primaries */
+    --status-running: #c9a66b;   /* warm amber, dim */
+    --status-error:   #b86a5e;   /* warm terracotta */
 }
 
 html { font-size: 17px; }
 
 [data-testid="stApp"] {
     background-color: var(--bg);
-    color: var(--text);
-    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--text-body);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
 }
 [data-testid="stMain"] { background-color: var(--bg); }
 [data-testid="stVerticalBlock"] > div { background-color: transparent; }
 
-/* Wider, taller content column */
+/* Editorial container — generous padding for contemplative pacing */
 [data-testid="stAppViewBlockContainer"] {
     max-width: 920px !important;
-    padding-top: 3.5rem;
-    padding-left: 2rem !important;
-    padding-right: 2rem !important;
+    padding-top: 5rem;
+    padding-bottom: 6rem;
+    padding-left: 2.5rem !important;
+    padding-right: 2.5rem !important;
 }
 
 header[data-testid="stHeader"] {
     background-color: var(--bg);
-    border-bottom: 1px solid #141414;
+    border-bottom: none;
 }
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 
-/* ── Animated title ── */
+/* ── Title — Matter-style display: large, weight 400, tight negative tracking ── */
 .bio-title {
     font-family: 'Inter', system-ui, sans-serif;
-    font-size: 4.2rem;
-    font-weight: 900;
-    letter-spacing: -0.04em;
+    font-size: 4.5rem;
+    font-weight: 400;          /* Warp uses Regular even for hero */
+    letter-spacing: -0.045em;  /* equiv. to -2.4px at 80px */
+    line-height: 1.0;
+    color: var(--text);        /* warm parchment, not gradient */
     margin-bottom: 0;
-    line-height: 0.95;
-    background: linear-gradient(
-        90deg,
-        #3a7a56 0%,
-        #4db87a 30%,
-        #2a6e50 55%,
-        #3a9e6a 80%,
-        #3a7a56 100%
-    );
-    background-size: 300% 100%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    animation: title-flow 14s linear infinite;
-    will-change: background-position;
-}
-@keyframes title-flow {
-    0%   { background-position: 0% 50%; }
-    100% { background-position: 300% 50%; }
 }
 
 .bio-subtitle {
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-family: 'Inter', system-ui, sans-serif;
     font-size: 0.72rem;
-    color: #2e2e2e;
-    margin-top: 8px;
-    margin-bottom: 40px;
-    letter-spacing: 0.18em;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-top: 14px;
+    margin-bottom: 56px;
+    letter-spacing: 0.18em;    /* uppercase editorial label */
+    text-transform: uppercase;
 }
 
-/* ── Physics toggle ── */
+/* ── Mode toggle — restrained pill, no glow ── */
 .toggle-wrap {
     display: flex;
     align-items: center;
     gap: 0;
-    background: #0e0e0e;
-    border: 1px solid #1f1f1f;
-    border-radius: 8px;
-    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 50px;       /* full pill */
+    padding: 5px;
     width: fit-content;
     position: relative;
-    margin: 0 auto 28px auto;
+    margin: 0 auto 36px auto;
     user-select: none;
 }
 .toggle-track {
     position: absolute;
-    top: 4px;
-    left: 4px;
-    width: calc(50% - 4px);
-    height: calc(100% - 8px);
-    background: linear-gradient(135deg, #1a3a28, #0e2a1c);
-    border: 1px solid #4db87a44;
-    border-radius: 5px;
-    transition: transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
-    box-shadow: 0 0 12px #4db87a22, inset 0 1px 0 #4db87a18;
+    top: 5px;
+    left: 5px;
+    width: calc(50% - 5px);
+    height: calc(100% - 10px);
+    background: var(--btn-bg);
+    border-radius: 50px;
+    transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: none;
 }
-.toggle-track.right {
-    transform: translateX(100%);
-}
+.toggle-track.right { transform: translateX(100%); }
+
 .toggle-btn {
     position: relative;
     z-index: 1;
-    padding: 10px 28px;
+    padding: 10px 32px;
     font-family: 'Inter', system-ui, sans-serif;
     font-size: 0.82rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    color: #3a3a3a;
+    font-weight: 500;          /* Matter Medium for button text */
+    letter-spacing: 0;
+    color: var(--text-muted);
     cursor: pointer;
-    border-radius: 5px;
+    border-radius: 50px;
     min-width: 130px;
     text-align: center;
     transition: color 0.3s ease;
@@ -177,181 +178,212 @@ footer { visibility: hidden; }
     background: transparent;
     outline: none;
 }
-.toggle-btn.active { color: #4db87a; }
+.toggle-btn.active { color: var(--text); }
 
-/* ── Text area ── */
+/* ── Text area — warm dark surface, parchment text ── */
 [data-testid="stTextArea"] textarea {
-    background-color: #0e0e0e !important;
+    background-color: var(--surface) !important;
     color: var(--text) !important;
     border: 1px solid var(--border) !important;
-    border-radius: 6px !important;
-    font-family: 'JetBrains Mono', 'Courier New', monospace !important;
-    font-size: 0.82rem !important;
-    caret-color: var(--accent);
+    border-radius: 8px !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+    font-size: 0.95rem !important;
+    font-weight: 400 !important;
+    letter-spacing: -0.005em !important;
+    caret-color: var(--text);
     resize: vertical;
-    padding: 14px 16px !important;
-    line-height: 1.6 !important;
+    padding: 18px 20px !important;
+    line-height: 1.5 !important;
+    transition: border-color 0.2s ease;
 }
 [data-testid="stTextArea"] textarea:focus {
-    border-color: #4db87a55 !important;
-    box-shadow: 0 0 0 2px #4db87a18 !important;
+    border-color: rgba(227, 227, 227, 0.28) !important;
+    box-shadow: none !important;
 }
-[data-testid="stTextArea"] textarea::placeholder { color: #2a2a2a !important; }
+[data-testid="stTextArea"] textarea::placeholder {
+    color: var(--text-dim) !important;
+}
 [data-testid="stTextArea"] label { display: none !important; }
 
-/* ── Run button ── */
-[data-testid="stButton"][id="run-btn-wrap"] > button,
-button[data-testid="baseButton-secondary"][key="run_btn"],
+/* ── Run button — Earth Gray pill, restrained CTA ── */
 div:has(> button[key="run_btn"]) button {
-    background: linear-gradient(135deg, #1a3a28, #0e2a1c) !important;
-    color: #4db87a !important;
-    border: 1px solid #4db87a55 !important;
-    border-radius: 6px !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.78rem !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.12em !important;
+    background: var(--btn-bg) !important;
+    color: var(--btn-text) !important;
+    border: 1px solid var(--border-soft) !important;
+    border-radius: 50px !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+    font-size: 0.88rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0 !important;
     padding: 14px 0 !important;
-    transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
+    transition: background 0.2s ease;
+    box-shadow: none !important;
 }
 div:has(> button[key="run_btn"]) button:hover {
-    box-shadow: 0 0 20px #4db87a33 !important;
-    border-color: #4db87a99 !important;
+    background: #404040 !important;
+    border-color: var(--border) !important;
+    box-shadow: none !important;
 }
 
-/* ── Expander ── */
+/* ── Expander — restrained, warm border ── */
 [data-testid="stExpander"] {
     background-color: var(--surface) !important;
     border: 1px solid var(--border) !important;
-    border-radius: 6px !important;
+    border-radius: 12px !important;
 }
 [data-testid="stExpander"] summary {
-    color: #444 !important;
-    font-family: 'JetBrains Mono', monospace !important;
+    color: var(--text-muted) !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
     font-size: 0.72rem !important;
+    font-weight: 400 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    padding: 14px 18px !important;
 }
 
-/* Hide native st.status() */
+/* Hide native status widget */
 [data-testid="stStatusWidget"] { display: none !important; }
 
-/* ── Download button ── */
+/* ── Download button — pill, restrained ── */
 [data-testid="stDownloadButton"] > button {
-    background-color: transparent !important;
-    color: var(--accent) !important;
-    border: 1px solid #4db87a44 !important;
-    border-radius: 5px !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.75rem !important;
-    font-weight: 400 !important;
-    padding: 10px 24px !important;
-    letter-spacing: 0.06em;
-    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    background-color: var(--btn-bg) !important;
+    color: var(--btn-text) !important;
+    border: 1px solid var(--border-soft) !important;
+    border-radius: 50px !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0 !important;
+    padding: 12px 28px !important;
+    transition: background 0.2s ease;
     width: auto !important;
+    box-shadow: none !important;
 }
 [data-testid="stDownloadButton"] > button:hover {
-    background-color: #4db87a18 !important;
-    box-shadow: 0 0 16px #4db87a22 !important;
+    background-color: #404040 !important;
+    box-shadow: none !important;
 }
 
-/* ── Terminal panels ── */
+/* ──────────────────────────────────────────────────────────────────────────
+   Terminal panels — kept monospace (they're agent telemetry logs), but
+   reframed in the warm palette. No bright green, no orange cursors.
+   ────────────────────────────────────────────────────────────────────────── */
 .terminal-panel {
     background-color: var(--surface);
     border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    border-radius: 6px;
-    padding: 20px 24px;
-    margin: 10px 0;
+    border-radius: 12px;
+    padding: 22px 26px;
+    margin: 12px 0;
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 0.78rem;
-    line-height: 1.8;
+    font-weight: 400;
+    line-height: 1.75;
     overflow-x: auto;
-    transition: transform 0.35s cubic-bezier(0.23, 1, 0.32, 1),
-                box-shadow 0.35s cubic-bezier(0.23, 1, 0.32, 1);
 }
-.terminal-panel:hover {
-    box-shadow: 0 4px 32px #4db87a0d;
-}
-.terminal-panel.running { border-left-color: #ffaa00; }
-.terminal-panel.error   { border-left-color: #ff4444; }
+.terminal-panel.running { border-color: rgba(201, 166, 107, 0.35); }
+.terminal-panel.error   { border-color: rgba(184, 106, 94, 0.35); }
 
 .terminal-header {
     font-family: 'Inter', system-ui, sans-serif;
     font-size: 0.65rem;
-    font-weight: 700;
-    color: #3a3a3a;
+    font-weight: 400;
+    color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.18em;
-    margin-bottom: 12px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid #181818;
+    letter-spacing: 0.24em;    /* wide editorial tracking */
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-soft);
 }
 .terminal-line {
-    color: #666;
+    color: var(--text-body);
     margin: 2px 0;
     white-space: pre-wrap;
     word-break: break-word;
 }
-.terminal-line.success { color: #4db87a; }
-.terminal-line.error   { color: #ff5555; }
-.terminal-line.warn    { color: #ffaa00; }
-.terminal-line.dim     { color: #2c2c2c; }
+.terminal-line.success { color: var(--text); }              /* parchment for success */
+.terminal-line.error   { color: var(--status-error); }
+.terminal-line.warn    { color: var(--status-running); }
+.terminal-line.dim     { color: var(--text-dim); }
 
 .terminal-cursor {
     display: inline-block;
-    width: 9px;
-    height: 14px;
-    background-color: #ffaa00;
-    margin-left: 3px;
+    width: 7px;
+    height: 12px;
+    background-color: var(--text-muted);
+    margin-left: 4px;
     vertical-align: middle;
-    animation: cur-blink 1s step-end infinite;
+    animation: cur-blink 1.2s step-end infinite;
 }
 @keyframes cur-blink {
-    0%, 100% { opacity: 1; }
+    0%, 100% { opacity: 0.6; }
     50%       { opacity: 0; }
 }
 
-/* ── Handoff ── */
+/* ── Handoff — uppercase editorial micro-label ── */
 .handoff-msg {
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 0.7rem;
-    color: #1e4a2c;
-    text-align: center;
-    padding: 8px 0 6px 0;
-    letter-spacing: 0.06em;
-}
-
-/* ── Pipeline complete ── */
-.pipeline-complete {
     font-family: 'Inter', system-ui, sans-serif;
-    font-size: 0.85rem;
-    font-weight: 700;
-    background: linear-gradient(90deg, #3a7a56, #4db87a, #2a6e50, #3a7a56);
-    background-size: 300% 100%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    animation: title-flow 10s linear infinite;
+    font-size: 0.65rem;
+    font-weight: 400;
+    color: var(--text-dim);
     text-align: center;
+    padding: 14px 0 10px 0;
     letter-spacing: 0.24em;
     text-transform: uppercase;
-    padding: 24px 0 12px 0;
-    border-top: 1px solid #181818;
-    margin-top: 24px;
-}
-.report-section-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.65rem;
-    color: #2a2a2a;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    margin-top: 20px;
-    margin-bottom: 8px;
 }
 
-/* ── Cursor magnetic field: magnetic-el class ── */
-.magnetic-el {
-    will-change: transform;
-    transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+/* ── Pipeline complete — flat parchment, no animated gradient ── */
+.pipeline-complete {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text);
+    text-align: center;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    padding: 36px 0 16px 0;
+    border-top: 1px solid var(--border-soft);
+    margin-top: 32px;
+}
+.report-section-label {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.65rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    margin-top: 28px;
+    margin-bottom: 16px;
+}
+
+/* ── Markdown report — warm parchment headings, ash gray body ── */
+.stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+    color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+}
+.stMarkdown h1 { font-size: 2.4rem; line-height: 1.15; }
+.stMarkdown h2 { font-size: 1.75rem; line-height: 1.2; }
+.stMarkdown h3 { font-size: 1.3rem; line-height: 1.25; }
+.stMarkdown p, .stMarkdown li {
+    color: var(--text-body);
+    font-size: 1.05rem;
+    line-height: 1.55;
+}
+.stMarkdown a { color: var(--text); text-decoration: underline; }
+.stMarkdown code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--surface-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: var(--text);
+}
+.stMarkdown pre {
+    background: var(--surface) !important;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 16px !important;
 }
 </style>
 """
@@ -382,7 +414,7 @@ def _terminal_panel(
     lines: list of (css_class, text) tuples.
     state: 'success' | 'error' | 'running'
     """
-    panel_cls = f"terminal-panel magnetic-el {state}"
+    panel_cls = f"terminal-panel {state}"
     rows = ""
     for css_cls, text in lines:
         cls = f"terminal-line {css_cls}".strip()
@@ -399,7 +431,7 @@ def _terminal_panel(
 def _handoff_msg(n_files: int, to_agent: str) -> str:
     return (
         f'<div class="handoff-msg">'
-        f"&gt;&gt; passing {n_files} file(s) ──&gt; {_esc(to_agent)}"
+        f"Passing {n_files} file(s) &nbsp;&middot;&nbsp; {_esc(to_agent)}"
         f"</div>"
     )
 
@@ -414,8 +446,8 @@ if "mode" not in st.session_state:
 
 # ── Header ───────────────────────────────────────────────────────────────────
 st.markdown(
-    '<div class="bio-title magnetic-el">BIOSWARM</div>'
-    '<div class="bio-subtitle">// MULTI-AGENT AI SYSTEM FOR BIOLOGICAL REPRODUCIBILITY</div>',
+    '<div class="bio-title">BioSwarm</div>'
+    '<div class="bio-subtitle">Multi-agent AI for biological reproducibility</div>',
     unsafe_allow_html=True,
 )
 
@@ -426,10 +458,10 @@ _track_right = "right"  if st.session_state["mode"] == "Dry Lab"  else ""
 
 st.markdown(
     f"""
-    <div class="toggle-wrap magnetic-el" id="bio-toggle">
+    <div class="toggle-wrap" id="bio-toggle">
       <div class="toggle-track {_track_right}" id="toggle-track"></div>
-      <button class="toggle-btn {_wet_active}" id="tbtn-wet" onclick="toggleMode('Wet Lab')">🧪&nbsp; Wet Lab</button>
-      <button class="toggle-btn {_dry_active}"  id="tbtn-dry"  onclick="toggleMode('Dry Lab')">💻&nbsp; Dry Lab</button>
+      <button class="toggle-btn {_wet_active}" id="tbtn-wet" onclick="toggleMode('Wet Lab')">Wet Lab</button>
+      <button class="toggle-btn {_dry_active}"  id="tbtn-dry"  onclick="toggleMode('Dry Lab')">Dry Lab</button>
     </div>
     """,
     unsafe_allow_html=True,
@@ -464,13 +496,13 @@ user_input = st.text_area(
 # Centered run button
 _rl, _rc, _rr = st.columns([2, 3, 2])
 with _rc:
-    run_clicked = st.button("[ RUN BIOSWARM ]", use_container_width=True, key="run_btn")
+    run_clicked = st.button("Run BioSwarm", use_container_width=True, key="run_btn")
 
-# ── JavaScript: toggle + cursor magnetic field ────────────────────────────────
+# ── JavaScript: mode toggle ───────────────────────────────────────────────────
 st.markdown("""
 <script>
 (function () {
-  /* ── 1. Physics toggle ─────────────────────────────────────────────── */
+  /* Mode toggle — clicks a hidden Streamlit button to trigger a Python rerun. */
   window.toggleMode = function (mode) {
     var track  = document.getElementById('toggle-track');
     var btnWet = document.getElementById('tbtn-wet');
@@ -487,7 +519,6 @@ st.markdown("""
       btnWet.classList.remove('active');
     }
 
-    // Click the corresponding hidden Streamlit button to trigger Python rerun
     var label = (mode === 'Wet Lab') ? 'Wet Lab' : 'Dry Lab';
     var allBtns = document.querySelectorAll('button[kind="secondary"]');
     for (var i = 0; i < allBtns.length; i++) {
@@ -497,49 +528,6 @@ st.markdown("""
       }
     }
   };
-
-  /* ── 2. Cursor magnetic field ──────────────────────────────────────── */
-  var mouseX = 0, mouseY = 0;
-  var targetX = 0, targetY = 0;
-  var rafId = null;
-
-  document.addEventListener('mousemove', function (e) {
-    mouseX = e.clientX;
-    mouseY = e.clientY;
-    if (!rafId) rafId = requestAnimationFrame(tick);
-  });
-
-  function tick() {
-    rafId = null;
-    var els = document.querySelectorAll('.magnetic-el');
-    els.forEach(function (el) {
-      var rect = el.getBoundingClientRect();
-      var cx = rect.left + rect.width  / 2;
-      var cy = rect.top  + rect.height / 2;
-      var dx = mouseX - cx;
-      var dy = mouseY - cy;
-      var dist = Math.sqrt(dx * dx + dy * dy);
-      var radius = Math.max(rect.width, rect.height) * 1.6 + 180;
-
-      if (dist < radius) {
-        var strength = (1 - dist / radius);
-        // cubic ease-out on strength for glass-fluid feel
-        strength = strength * strength * (3 - 2 * strength);
-        var pull = strength * 8;           // max 8 px displacement
-        var tx = (dx / dist) * pull;
-        var ty = (dy / dist) * pull;
-        el.style.transform = 'translate(' + tx.toFixed(2) + 'px, ' + ty.toFixed(2) + 'px)';
-      } else {
-        el.style.transform = 'translate(0px, 0px)';
-      }
-    });
-  }
-
-  // Also apply to terminal panels that appear later (MutationObserver)
-  var observer = new MutationObserver(function () {
-    // Re-query is automatic since querySelectorAll runs on each tick
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
 })();
 </script>
 """, unsafe_allow_html=True)
@@ -1036,15 +1024,15 @@ if run_clicked and user_input.strip():
     # ── Results ────────────────────────────────────────────────────────────
 
     st.markdown(
-        '<div class="pipeline-complete">// PIPELINE COMPLETE //</div>',
+        '<div class="pipeline-complete">Pipeline complete</div>',
         unsafe_allow_html=True,
     )
 
-    with st.expander("// PIPELINE STATE (state.json)"):
+    with st.expander("Pipeline state · state.json"):
         st.json(load_json(STATE_PATH))
 
     st.markdown(
-        '<div class="report-section-label">// FINAL REPORT</div>',
+        '<div class="report-section-label">Final report</div>',
         unsafe_allow_html=True,
     )
     report = open(f"workspace/final_reports/report_{task_id}.md").read()
@@ -1053,14 +1041,14 @@ if run_clicked and user_input.strip():
     if mode == "Wet Lab":
         script = open(f"workspace/generated_code/protocol_{task_id}.py").read()
         st.download_button(
-            "[ DOWNLOAD OPENTRONS SCRIPT .py ]",
+            "Download Opentrons script",
             script,
             f"protocol_{task_id}.py",
             "text/plain",
         )
     else:
         st.download_button(
-            "[ DOWNLOAD REPRODUCIBILITY REPORT .md ]",
+            "Download reproducibility report",
             report,
             f"report_{task_id}.md",
             "text/markdown",
