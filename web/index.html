@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BioSwarm</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" />
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <h1 class="bio-title">BioSwarm</h1>
+      <p class="bio-subtitle">Multi-agent AI for biological reproducibility</p>
+    </header>
+
+    <div class="toggle" data-mode="wet_lab" role="tablist" aria-label="Pipeline mode">
+      <span class="toggle-track" aria-hidden="true"></span>
+      <button type="button" class="toggle-btn active" data-mode="wet_lab" role="tab" aria-selected="true">Wet Lab</button>
+      <button type="button" class="toggle-btn" data-mode="dry_lab" role="tab" aria-selected="false">Dry Lab</button>
+    </div>
+
+    <form id="input-form" autocomplete="off">
+      <textarea id="input"
+                name="input"
+                rows="5"
+                placeholder="Paste a paper title, DOI, URL, or protocol description..."
+                spellcheck="false"
+                required></textarea>
+      <div class="run-row">
+        <button type="submit" id="run-btn" class="pill-btn">Run BioSwarm</button>
+      </div>
+    </form>
+
+    <section id="pipeline" aria-live="polite"></section>
+
+    <section id="result" hidden>
+      <div class="pipeline-complete">Pipeline complete</div>
+
+      <details class="state-viewer">
+        <summary>Pipeline state &middot; state.json</summary>
+        <pre id="state-json" class="state-json"></pre>
+      </details>
+
+      <div class="report-section-label">Final report</div>
+      <article id="report" class="report"></article>
+
+      <div class="downloads">
+        <a id="download-script" class="pill-btn" href="#" download hidden>Download Opentrons script</a>
+        <a id="download-report" class="pill-btn" href="#" download>Download reproducibility report</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/python.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
