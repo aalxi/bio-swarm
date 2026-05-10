@@ -1,0 +1,420 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   BioSwarm — Warp-inspired warm dark palette.
+   Lifted from the prior Streamlit CSS_BLOCK and reframed for native HTML.
+   No bold accents, no animated gradients, no glow effects. Depth comes from
+   semi-transparent borders and warm parchment text.
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root {
+    /* Backgrounds — warm earthy near-black, never pure #000 */
+    --bg:           #0e0d0c;
+    --surface:      #161513;
+    --surface-2:    rgba(255, 255, 255, 0.04);
+
+    /* Text — warm parchment family, never pure white */
+    --text:         #faf9f6;   /* Warm Parchment — primary */
+    --text-body:    #afaeac;   /* Ash Gray — body */
+    --text-muted:   #868584;   /* Stone Gray — labels */
+    --text-dim:     #5a5856;   /* deeper muted — timestamps, paths */
+
+    /* Borders & buttons — Earth Gray family */
+    --border:       rgba(227, 227, 227, 0.12);
+    --border-soft:  rgba(227, 227, 227, 0.06);
+    --btn-bg:       #353534;
+    --btn-bg-hover: #404040;
+    --btn-text:     #afaeac;
+
+    /* Status — warm muted, NOT bright primaries */
+    --status-running: #c9a66b;   /* warm amber */
+    --status-error:   #b86a5e;   /* warm terracotta */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg);
+    color: var(--text-body);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: 17px;
+}
+
+body {
+    min-height: 100vh;
+}
+
+::selection { background: rgba(250, 249, 246, 0.18); color: var(--text); }
+
+.container {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 5rem 2.5rem 6rem 2.5rem;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.hero {
+    margin-bottom: 56px;
+}
+.bio-title {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 4.5rem;
+    font-weight: 400;             /* Warp uses Regular even for hero */
+    letter-spacing: -0.045em;     /* equiv. to -2.4px at 80px */
+    line-height: 1.0;
+    color: var(--text);
+    margin: 0;
+}
+.bio-subtitle {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin: 14px 0 0 0;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
+/* ── Mode toggle — native, no double-button workaround ─────────────────── */
+
+.toggle {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 50px;
+    padding: 5px;
+    width: fit-content;
+    position: relative;
+    margin: 0 auto 36px auto;
+    user-select: none;
+}
+.toggle-track {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    width: calc(50% - 5px);
+    height: calc(100% - 10px);
+    background: var(--btn-bg);
+    border-radius: 50px;
+    transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+}
+.toggle[data-mode="dry_lab"] .toggle-track {
+    transform: translateX(100%);
+}
+.toggle-btn {
+    position: relative;
+    z-index: 1;
+    padding: 10px 32px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 50px;
+    min-width: 130px;
+    text-align: center;
+    transition: color 0.3s ease;
+    border: none;
+    background: transparent;
+    outline: none;
+}
+.toggle-btn.active { color: var(--text); }
+.toggle-btn:focus-visible { box-shadow: 0 0 0 1px var(--border); }
+
+/* ── Input form ─────────────────────────────────────────────────────────── */
+
+#input-form {
+    margin-bottom: 28px;
+}
+#input {
+    width: 100%;
+    background-color: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.95rem;
+    font-weight: 400;
+    letter-spacing: -0.005em;
+    caret-color: var(--text);
+    resize: vertical;
+    padding: 18px 20px;
+    line-height: 1.5;
+    transition: border-color 0.2s ease;
+    min-height: 130px;
+}
+#input:focus {
+    outline: none;
+    border-color: rgba(227, 227, 227, 0.28);
+}
+#input::placeholder { color: var(--text-dim); }
+
+.run-row {
+    display: flex;
+    justify-content: center;
+    margin-top: 18px;
+}
+
+/* ── Pill button (Run, Download) ────────────────────────────────────────── */
+
+.pill-btn {
+    display: inline-block;
+    background: var(--btn-bg);
+    color: var(--btn-text);
+    border: 1px solid var(--border-soft);
+    border-radius: 50px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.88rem;
+    font-weight: 500;
+    padding: 14px 56px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+    text-decoration: none;
+    text-align: center;
+}
+.pill-btn:hover {
+    background: var(--btn-bg-hover);
+    color: var(--text);
+}
+.pill-btn:focus-visible {
+    outline: none;
+    border-color: var(--border);
+}
+.pill-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+#run-btn { min-width: 280px; }
+
+/* ── Terminal panels — agent telemetry logs ─────────────────────────────── */
+
+.terminal-panel {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 26px;
+    margin: 12px 0;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.75;
+    overflow-x: auto;
+}
+.terminal-panel.running { border-color: rgba(201, 166, 107, 0.35); }
+.terminal-panel.error   { border-color: rgba(184, 106, 94, 0.35); }
+
+.terminal-header {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.65rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-soft);
+}
+.terminal-line {
+    color: var(--text-body);
+    margin: 2px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.terminal-line.success { color: var(--text); }
+.terminal-line.error   { color: var(--status-error); }
+.terminal-line.warn    { color: var(--status-running); }
+.terminal-line.dim     { color: var(--text-dim); }
+
+.terminal-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 13px;
+    background-color: var(--status-running);
+    margin-left: 4px;
+    vertical-align: -2px;
+    animation: cur-blink 1.05s step-end infinite;
+}
+@keyframes cur-blink {
+    0%, 49%   { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+
+/* ── Handoff between agents ─────────────────────────────────────────────── */
+
+.handoff-msg {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.65rem;
+    font-weight: 400;
+    color: var(--text-dim);
+    text-align: center;
+    padding: 14px 0 10px 0;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+}
+
+/* ── Pipeline-complete banner + section labels ──────────────────────────── */
+
+.pipeline-complete {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text);
+    text-align: center;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    padding: 36px 0 16px 0;
+    border-top: 1px solid var(--border-soft);
+    margin-top: 32px;
+}
+.report-section-label {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.65rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    margin: 28px 0 16px 0;
+}
+
+/* ── State viewer (native <details>) ────────────────────────────────────── */
+
+.state-viewer {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin: 24px 0;
+    overflow: hidden;
+}
+.state-viewer summary {
+    color: var(--text-muted);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.72rem;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    padding: 14px 18px;
+    cursor: pointer;
+    list-style: none;
+}
+.state-viewer summary::-webkit-details-marker { display: none; }
+.state-viewer summary::before {
+    content: "▸ ";
+    color: var(--text-dim);
+    margin-right: 4px;
+    transition: transform 0.2s ease;
+    display: inline-block;
+}
+.state-viewer[open] summary::before {
+    content: "▾ ";
+}
+.state-json {
+    margin: 0;
+    padding: 0 18px 18px 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--text-body);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ── Markdown report (server-rendered HTML injected) ────────────────────── */
+
+.report h1, .report h2, .report h3, .report h4 {
+    color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+    margin-top: 1.8em;
+    margin-bottom: 0.6em;
+}
+.report h1 { font-size: 2.4rem; line-height: 1.15; }
+.report h2 { font-size: 1.75rem; line-height: 1.2; }
+.report h3 { font-size: 1.3rem; line-height: 1.25; }
+.report h4 { font-size: 1.05rem; line-height: 1.3; color: var(--text-body); }
+
+.report p, .report li {
+    color: var(--text-body);
+    font-size: 1.05rem;
+    line-height: 1.55;
+}
+.report ul, .report ol { padding-left: 1.4em; }
+.report li { margin: 0.3em 0; }
+
+.report a {
+    color: var(--text);
+    text-decoration: underline;
+    text-decoration-color: var(--text-dim);
+    text-underline-offset: 2px;
+}
+.report a:hover { text-decoration-color: var(--text); }
+
+.report code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--surface-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: var(--text);
+}
+.report pre {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 16px;
+    overflow-x: auto;
+    margin: 1em 0;
+}
+.report pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-size: 0.85em;
+}
+
+.report table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    font-size: 0.95rem;
+}
+.report th, .report td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-soft);
+}
+.report th {
+    color: var(--text);
+    font-weight: 500;
+}
+
+.report blockquote {
+    border-left: 2px solid var(--border);
+    padding-left: 16px;
+    color: var(--text-muted);
+    margin: 1em 0;
+}
+
+/* ── Downloads row ──────────────────────────────────────────────────────── */
+
+.downloads {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 36px;
+}
+
+/* ── Highlight.js theme override — keep tokens muted to match the palette ─ */
+
+.hljs {
+    background: var(--surface) !important;
+    color: var(--text-body) !important;
+    padding: 0 !important;
+}
