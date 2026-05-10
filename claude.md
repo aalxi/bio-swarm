@@ -27,8 +27,9 @@ pip install -r requirements.txt
 cp .env.example .env
 # Fill in all four keys in .env
 
-# 3a. Run the Streamlit UI
-streamlit run main.py
+# 3a. Run the FastAPI web UI
+python server.py
+# Then open http://127.0.0.1:8000 in a browser.
 
 # 3b. Or run headlessly from the CLI
 python run_cli.py --mode wet_lab --input "Paper title or DOI"
@@ -53,6 +54,10 @@ pydantic>=2.0.0
 streamlit>=1.35.0
 python-dotenv>=1.0.0
 tiktoken>=0.7.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+sse-starlette>=2.0.0
+markdown>=3.5
 ```
 
 ---
@@ -65,8 +70,13 @@ bio_swarm/
 ├── .env                       # API keys — never commit this
 ├── .env.example               # Template — commit this
 ├── requirements.txt
-├── main.py                    # Streamlit UI entry point — creates /workspace/ on startup
+├── server.py                  # FastAPI web UI entry point — serves web/ + streams agent events over SSE
 ├── run_cli.py                 # Headless CLI entry point — calls supervisor.run_pipeline()
+├── main.py                    # Legacy Streamlit UI — kept as fallback through demo cycle, then remove
+├── web/                       # Static frontend served by server.py
+│   ├── index.html             # Single-page UI — Warp aesthetic, native HTML toggle
+│   ├── app.css                # Warm dark palette, terminal-panel styles, markdown report styles
+│   └── app.js                 # SSE client, per-phase panel renderers, mode toggle
 ├── agents/
 │   ├── supervisor.py          # Pure-Python orchestrator (NOT an LLM) — owns state.json
 │   ├── researcher.py          # Tavily Agent — web search & scraping
@@ -86,7 +96,7 @@ bio_swarm/
 ├── workflows/
 │   ├── wet_lab_workflow.md    # Step-by-step agent routing for wet lab
 │   └── dry_lab_workflow.md    # Step-by-step agent routing for dry lab
-└── workspace/                 # Shared agent memory — auto-created by main.py / run_cli.py
+└── workspace/                 # Shared agent memory — auto-created by server.py / run_cli.py
     ├── state.json             # Live task state — Supervisor is the ONLY writer
     ├── raw_research/          # Researcher Agent outputs
     │   ├── {task_id}_search_{i}.json
@@ -103,7 +113,7 @@ bio_swarm/
         └── report_{task_id}.md
 ```
 
-**Workspace creation** — both `main.py` and `run_cli.py` run this on startup before any agent is called:
+**Workspace creation** — `server.py`, `run_cli.py`, and `main.py` all run this on startup before any agent is called:
 ```python
 import os
 WORKSPACE_DIRS = [
@@ -358,9 +368,9 @@ def run_pipeline(
 4. Coding (always)
 5. Synthesis (always)
 
-**Error handling**: on any non-success contract from a blocking step, the Supervisor marks `state.status = "error"`, appends `[phase] {message}: {error_detail}` to `state.errors`, prints the token summary, and returns the error dict. No clarifying questions, no user interaction — both entry points (`main.py` and `run_cli.py`) handle UX.
+**Error handling**: on any non-success contract from a blocking step, the Supervisor marks `state.status = "error"`, appends `[phase] {message}: {error_detail}` to `state.errors`, prints the token summary, and returns the error dict. No clarifying questions, no user interaction — entry points (`server.py`, `run_cli.py`, legacy `main.py`) handle UX.
 
-**`main.py` duplicates this orchestration inline** so it can render per-agent terminal panels in Streamlit; `run_cli.py` calls `run_pipeline` directly. Keep the two in sync when adding new phases.
+**Status callback contract**: `run_pipeline(..., status_callback)` invokes the callback with **structured dict events** for both `phase_start` and `phase_end` (see "Entry Points" below for the full event schema). Strings are forwarded too for backwards compatibility. `server.py` queues these events for SSE streaming; `run_cli.py` formats them as `[cli] {phase}: {status}` lines. The legacy `main.py` duplicates orchestration inline (predates the callback) — keep it in sync when adding new phases until it's removed.
 
 ---
 
@@ -604,18 +614,44 @@ class WorkspaceState(BaseModel):
 
 ## Entry Points
 
-### Streamlit UI (`main.py`)
-- Renders per-agent terminal panels as each phase runs.
-- **Duplicates the orchestration inline** (does not call `run_pipeline`) so it can update panel state between agents.
-- Imports all five worker agents directly; shares the same `state.json` discipline as the headless runner.
+### FastAPI Web UI (`server.py`)
+- `python server.py` → http://127.0.0.1:8000
+- Wraps `supervisor.run_pipeline` in a thin web layer. Endpoints:
+  - `POST /run` → `{task_id}` (starts a daemon thread running the supervisor)
+  - `GET  /events/{task_id}` → Server-Sent Events stream of phase events
+  - `GET  /report/{task_id}` → server-rendered report HTML (`{html: "..."}`)
+  - `GET  /download/{task_id}?kind=script|report` → file download
+  - `GET  /state/{task_id}` → workspace/state.json (404 if no longer current)
+  - `GET  /` and `/static/*` → serves `web/index.html` + `web/{app.css, app.js}`
+- **Single-tenant by design** — `workspace/state.json` is global. Concurrent `/run` calls would race; document and enforce one active task at a time.
+- The frontend (`web/`) is vanilla HTML/CSS/JS, no build step. Highlight.js loaded from CDN for code-block syntax highlighting in the report.
+
+#### Status callback event schema
+The supervisor invokes `status_callback` with these dict shapes (server.py forwards them as SSE events of the same `type`):
+```python
+# Phase boundary
+{"type": "phase_start", "phase": "research"|"extraction"|"enrichment"|"coding"|"synthesis", "ts": "HH:MM:SS"}
+
+# Phase result (built from the agent return contract)
+{"type": "phase_end", "phase": "...", "status": "success"|"error",
+ "files": [...], "message": "...", "retry_count": int,
+ "error_detail": str|None, "ts": "HH:MM:SS",
+ # Phase-specific extras (enrichment only):
+ "gaps_filled": int, "gaps_identified": int,
+ "conflicts": [...], "tavily_queries_executed": int}
+```
+Server-only synthetic events: `{"type": "done", "result": {...}}` and `{"type": "ping"}` (1s SSE keep-alive).
 
 ### Headless CLI (`run_cli.py`)
 - `python run_cli.py --mode {wet_lab|dry_lab} --input "…"`
-- Calls `supervisor.run_pipeline(...)` with a `status_callback` that prints each phase transition.
+- Calls `supervisor.run_pipeline(...)` with a `status_callback` that formats each dict event as `[cli] {phase}: {status}`.
 - Exits 0 on success, 1 on any error.
 - `chdir`s to the project root first so all `workspace/…` relative paths resolve correctly.
 
-**When adding a new phase, update both entry points.**
+### Legacy Streamlit UI (`main.py`)
+- Kept temporarily as a fallback. Does NOT use `run_pipeline` — it duplicates orchestration inline (predates the structured callback). Will be removed once `server.py` has been demoed.
+
+**When adding a new phase**, update: `agents/supervisor.py` (add `_emit_start`/`_emit_end` calls), `web/app.js` (add a `build{Phase}Lines` builder + entries in `PHASE_LABEL` / `NEXT_AGENT` / `PHASE_BUILDER`), `run_cli.py` (no change needed — the callback is generic), and (until removed) `main.py` (add an inline panel block).
 
 ---
 
@@ -657,7 +693,7 @@ class WorkspaceState(BaseModel):
 ## Hackathon Demo Script
 
 Walk judges through this sequence:
-1. Paste a real biopaper link into the Streamlit UI.
+1. Paste a real biopaper link into the FastAPI web UI at http://127.0.0.1:8000.
 2. Show Tavily scraping in real time (per-agent terminal panel).
 3. Show the extracted JSON protocol appearing in `workspace/extracted_protocols/`.
 4. Show PIE's notes-mining and Tavily gap-filling, with the `enrichment_{task_id}.json` audit trail.
