@@ -1,0 +1,25 @@
+[cli] task_id=fd7a8827  mode=dry_lab
+[cli] input: Deep learning prediction of selenocysteine (Sec, the 21st amino acid) insertion sites in eukaryotic selenoproteins from mRNA sequence and SECIS elements
+
+[cli] research: starting
+[cli] research: success — Research complete: 3 queries, 15 results, 15 unique sources
+[cli] extraction: starting
+[cli] extraction: success — Protocol extracted and validated (dry_lab mode) — saved to workspace/extracted_protocols/protocol_fd7a8827.json
+[cli] coding: starting
+[cli] coding: error — No github_url in reproducibility target
+
+================================================================
+TOKEN USAGE SUMMARY
+================================================================
+Agent                 Calls     Prompt Completion      Total
+----------------------------------------------------------------
+methodology               1      7,768        236      8,004
+researcher                2      2,416        235      2,651
+----------------------------------------------------------------
+TOTAL                     3     10,184        471     10,655
+================================================================
+
+
+[cli] pipeline finished — status: error
+[cli] errors:
+  - [coding] No github_url in reproducibility target: github_url is null or missing
