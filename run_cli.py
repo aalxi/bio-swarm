@@ -47,11 +47,26 @@ def main():
     print(f"[cli] input: {args.input}")
     print()
 
+    def cli_callback(event):
+        if isinstance(event, dict):
+            phase = event.get("phase", "?")
+            etype = event.get("type", "")
+            if etype == "phase_start":
+                print(f"[cli] {phase}: starting")
+            elif etype == "phase_end":
+                status = event.get("status", "?")
+                msg = event.get("message", "")
+                print(f"[cli] {phase}: {status}" + (f" — {msg}" if msg else ""))
+            else:
+                print(f"[cli] {event}")
+        else:
+            print(f"[cli] {event}")
+
     result = run_pipeline(
         user_input=args.input,
         mode=args.mode,
         task_id=task_id,
-        status_callback=lambda msg: print(f"[cli] {msg}"),
+        status_callback=cli_callback,
     )
 
     print()
