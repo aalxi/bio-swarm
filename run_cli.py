@@ -80,7 +80,9 @@ def main():
             for e in errors:
                 print(f"  - {e}")
 
-    sys.exit(0 if result["status"] == "success" else 1)
+    exit_code = 0 if result["status"] == "success" else 1
+    print(f"[cli] exit_code={exit_code}")
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
