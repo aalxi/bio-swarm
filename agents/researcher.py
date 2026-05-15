@@ -183,11 +183,12 @@ def researcher_agent(user_input: str, mode: str, task_id: str) -> dict:
         save_json({"query": query, "results": clean_results, "sources": [r.get("url") for r in results]}, search_file)
         output_files.append(search_file)
 
-    # Step 2b: Dry-lab github bias — if no github URL surfaced, run one targeted query.
-    # Without a repo URL, the dry-lab coder hard-fails at the first step.
-    if mode == "dry_lab" and not any(
-        "github.com" in (r.get("url") or "") for r in all_results
-    ):
+    # Step 2b: Dry-lab github bias — always run a targeted site:github.com query.
+    # The previous "any github URL satisfies" guard was defeated by catalog repos
+    # (smoke test 3: papers_for_protein_design_using_DL surfaced for a deep-Sep
+    # query and short-circuited the fallback). Cost: ~1 extra Tavily query per
+    # dry-lab run; upside: Methodology gets a paper-specific repo candidate.
+    if mode == "dry_lab":
         gh_query = f"{user_input} site:github.com"
         try:
             gh_results = search_web(gh_query)
