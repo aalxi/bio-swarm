@@ -11,6 +11,17 @@ from agents.coder import coder_agent
 from agents.synthesizer import synthesizer_agent
 from tools.token_tracker import print_summary as print_token_summary
 
+import hashlib
+
+MAX_ITERATIONS = 3
+DEMO_FIELD_PATH = "step_1.template_amount_ng"
+
+
+def _seed_for(task_id: str, iteration_index: int) -> int:
+    """Stable 32-bit seed across processes (reviewer issue #8)."""
+    digest = hashlib.md5(f"{task_id}:{iteration_index}".encode()).digest()
+    return int.from_bytes(digest[:4], "big")
+
 
 STATE_PATH = "workspace/state.json"
 
