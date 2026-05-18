@@ -152,3 +152,84 @@ def _llm_call_with_retry(
         f"for the rule trace."
     )
     return deterministic, [], True
+
+
+from tools.file_tool import load_json, save_json
+
+
+def _split_field_path(field_path: str) -> tuple[int, str]:
+    head, field = field_path.split(".", 1)
+    return int(head[len("step_"):]), field
+
+
+def replanner_agent(
+    reading: QPCRReading,
+    protocol_path: str,
+    iteration_index: int,
+    field_path: str,
+    current_value: float,
+) -> dict[str, Any]:
+    """Decide action via heuristic, narrate via LLM, append a
+    FieldLineage(replanner_revision) record. Returns Agent Return Contract
+    plus 'action', 'new_value', 'rule_id', 'citation_failure'."""
+    try:
+        action, new_value, rule_id = decide_action(reading, current_value)
+        prompt = (
+            f"Action chosen: {action}; new_value: {new_value}; rule_id: {rule_id}.\n"
+            f"Current Cq={reading.cq}, regime={reading.regime_label}, "
+            f"ambiguous={reading.ambiguous}, no_amp={reading.no_amplification}, "
+            f"template_ng={reading.template_ng}.\n"
+            f"Write a one-paragraph rationale; cite registry keys only."
+        )
+        rationale, cite_keys, citation_failure = _llm_call_with_retry(
+            prompt, action, rule_id,
+        )
+
+        proto = load_json(protocol_path)
+        step_number, field_name = _split_field_path(field_path)
+        step = next(
+            s for s in proto["sequential_steps"]
+            if s.get("step_number") == step_number
+        )
+        prev_head = step.get("field_lineage", {}).get(field_name)
+        prev_lineage = (
+            FieldLineage.model_validate(prev_head) if prev_head else None
+        )
+
+        new_head = FieldLineage(
+            value=new_value if new_value is not None else current_value,
+            placed_at=datetime.now(UTC),
+            source_type="replanner_revision",
+            replanner_revision=ReplannerRevisionDetail(
+                iteration=iteration_index, action=action, rule_id=rule_id,
+                rationale=rationale, parent_value=current_value,
+                parent_cq=reading.cq, citation_failure=citation_failure,
+            ),
+            citations=list(cite_keys),
+            iteration_index=iteration_index,
+            parent=prev_lineage,
+        )
+        step.setdefault("field_lineage", {})[field_name] = new_head.model_dump(
+            mode="json"
+        )
+        save_json(proto, protocol_path)
+
+        return {
+            "status": "success",
+            "output_files": [protocol_path],
+            "message": f"replanner iter {iteration_index}: {action}",
+            "retry_count": 0,
+            "error_detail": None,
+            "action": action,
+            "new_value": new_value,
+            "rule_id": rule_id,
+            "rationale": rationale,
+            "citation_keys": list(cite_keys),
+            "citation_failure": citation_failure,
+        }
+    except Exception as e:
+        return {
+            "status": "error", "output_files": [],
+            "message": f"replanner failed: {type(e).__name__}",
+            "retry_count": 0, "error_detail": str(e),
+        }
