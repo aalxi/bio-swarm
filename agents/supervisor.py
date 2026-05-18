@@ -484,3 +484,64 @@ def _run_iteration_phase(state, protocol_path: str, status_callback) -> dict:
         ),
         "retry_count": 0, "error_detail": None,
     }
+
+
+def run_pipeline_from_demo(
+    user_input: str, mode: str, task_id: str,
+    protocol_path: str, enable_iteration: bool, status_callback=None,
+) -> dict:
+    """Skip research+methodology+enrichment; start at coding with the demo
+    cache already installed at protocol_path."""
+    state = WorkspaceState(
+        task_id=task_id, mode=mode, user_input=user_input, status="coding",
+    )
+    state.research.done = True
+    state.extraction.done = True
+    state.extraction.protocol_file = protocol_path
+    state.extraction.schema_valid = True
+    state.enrichment.skipped = True
+    state.iterations.enabled = enable_iteration
+    _save_state(state)
+
+    _emit_start(status_callback, "coding")
+    try:
+        coder_result = coder_agent(
+            {"output_files": [protocol_path]}, mode, task_id,
+        )
+    except Exception as e:
+        coder_result = _exception_contract(e)
+    _emit_end(status_callback, "coding", coder_result)
+    if coder_result.get("status") != "success":
+        return _handle_error(state, "coding", coder_result, status_callback)
+    out_files = coder_result.get("output_files", [])
+    state.coding.done = True
+    state.coding.script_file = out_files[0] if out_files else None
+    state.coding.simulation_passed = True
+    _save_state(state)
+
+    if mode == "wet_lab":
+        iter_result = _run_iteration_phase(state, protocol_path, status_callback)
+        if iter_result.get("status") != "success":
+            return _handle_error(state, "iteration", iter_result, status_callback)
+
+    state.status = "synthesis"
+    _save_state(state)
+    _emit_start(status_callback, "synthesis")
+    try:
+        synth_result = synthesizer_agent(task_id)
+    except Exception as e:
+        synth_result = _exception_contract(e)
+    _emit_end(status_callback, "synthesis", synth_result)
+    if synth_result.get("status") != "success":
+        return _handle_error(state, "synthesis", synth_result, status_callback)
+    out_files = synth_result.get("output_files", [])
+    state.synthesis.done = True
+    state.synthesis.report_file = out_files[0] if out_files else None
+    state.status = "complete"
+    _save_state(state)
+    print_token_summary()
+    return {
+        "status": "success", "task_id": task_id,
+        "report_file": state.synthesis.report_file,
+        "state": state.model_dump(),
+    }

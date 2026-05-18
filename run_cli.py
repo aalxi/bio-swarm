@@ -30,15 +30,24 @@ from agents.supervisor import run_pipeline
 def main():
     parser = argparse.ArgumentParser(description="BioSwarm CLI runner")
     parser.add_argument(
-        "--mode",
-        required=True,
-        choices=["wet_lab", "dry_lab"],
-        help="Pipeline mode: wet_lab or dry_lab",
+        "--mode", required=True, choices=["wet_lab", "dry_lab"],
+    )
+    parser.add_argument("--input", required=True, help="Paper title/DOI/URL")
+    parser.add_argument(
+        "--enable-iteration", action="store_true",
+        help="Run the closed-loop iteration phase (wet_lab only)",
     )
     parser.add_argument(
-        "--input",
-        required=True,
-        help="Paper title, DOI, URL, or abstract",
+        "--trace-field", default=None,
+        help="After completion, render this field's lineage tree (e.g. 'step_1.template_amount_ng')",
+    )
+    parser.add_argument(
+        "--trace-all-fields", action="store_true",
+        help="After completion, render every field's lineage tree",
+    )
+    parser.add_argument(
+        "--demo-paper", default=None,
+        help="Load demo cache 'rt-qpcr' from workspace/demo_cache/; skips Research+Methodology",
     )
     args = parser.parse_args()
 
@@ -62,12 +71,31 @@ def main():
         else:
             print(f"[cli] {event}")
 
-    result = run_pipeline(
-        user_input=args.input,
-        mode=args.mode,
-        task_id=task_id,
-        status_callback=cli_callback,
-    )
+    if args.demo_paper:
+        from pathlib import Path
+        import shutil as _sh
+        demo_slug = args.demo_paper.replace("-", "_")
+        demo_src = Path(f"workspace/demo_cache/{demo_slug}_protocol.json")
+        if not demo_src.exists():
+            print(f"[cli] demo cache not found: {demo_src}", file=sys.stderr)
+            sys.exit(1)
+        proto_path = Path(f"workspace/extracted_protocols/protocol_{task_id}.json")
+        _sh.copy(demo_src, proto_path)
+        print(f"[cli] demo-paper loaded: {demo_slug}")
+
+        from agents.supervisor import run_pipeline_from_demo
+        result = run_pipeline_from_demo(
+            user_input=args.input, mode=args.mode, task_id=task_id,
+            protocol_path=str(proto_path),
+            enable_iteration=args.enable_iteration,
+            status_callback=cli_callback,
+        )
+    else:
+        result = run_pipeline(
+            user_input=args.input, mode=args.mode, task_id=task_id,
+            status_callback=cli_callback,
+            enable_iteration=args.enable_iteration,
+        )
 
     print()
     print(f"[cli] pipeline finished — status: {result['status']}")
@@ -82,6 +110,44 @@ def main():
 
     exit_code = 0 if result["status"] == "success" else 1
     print(f"[cli] exit_code={exit_code}")
+
+    if (args.trace_field or args.trace_all_fields) and result.get("status") == "success":
+        from tools.lineage_renderer import (
+            render_lineage_tree, render_aggregate_summary,
+        )
+        from tools.file_tool import load_json
+        from schemas.lineage_schema import FieldLineage
+        from schemas.state_schema import IterationsState
+
+        proto_path = result["state"]["extraction"]["protocol_file"]
+        if proto_path:
+            proto = load_json(proto_path)
+            fields: dict[str, FieldLineage] = {}
+            for step in proto.get("sequential_steps", []):
+                for field_name, fl_json in (step.get("field_lineage") or {}).items():
+                    key = f"step_{step['step_number']}.{field_name}"
+                    fields[key] = FieldLineage.model_validate(fl_json)
+
+            iters = IterationsState.model_validate(
+                result["state"].get("iterations", {})
+            )
+            print()
+            print(render_aggregate_summary(
+                task_id=task_id, all_field_lineages=fields,
+                iterations_state=iters,
+            ))
+            print()
+            targets = (
+                list(fields.keys()) if args.trace_all_fields else [args.trace_field]
+            )
+            for t in targets:
+                if t in fields:
+                    print(f"── {t} ──")
+                    print(render_lineage_tree(fields[t]))
+                    print()
+                else:
+                    print(f"[cli] field not found: {t}")
+
     sys.exit(exit_code)
 
 
