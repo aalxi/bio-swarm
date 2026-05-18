@@ -462,6 +462,16 @@ def synthesizer_agent(task_id: str) -> dict[str, Any]:
             str(e),
         )
 
+    # Append Field Lineage Summary section for wet-lab runs with iteration data
+    if mode == "wet_lab":
+        lineage_section = _render_field_lineage_section(task_id)
+        if lineage_section:
+            report_md = report + "\n" + lineage_section
+            try:
+                save_text(report_md, out_path)
+            except OSError:
+                pass  # already saved above; lineage append is best-effort
+
     return _contract(
         "success",
         [out_path],
@@ -469,3 +479,82 @@ def synthesizer_agent(task_id: str) -> dict[str, Any]:
         0,
         None,
     )
+
+
+def _render_field_lineage_section(task_id: str) -> str:
+    """Return a markdown 'Field Lineage Summary' section. Reads
+    workspace/extracted_protocols/protocol_{task_id}.json and
+    workspace/state.json. Safe to call even when no iterations ran."""
+    from tools.file_tool import load_json
+    try:
+        proto = load_json(f"workspace/extracted_protocols/protocol_{task_id}.json")
+    except Exception:
+        return ""
+    try:
+        state = load_json("workspace/state.json")
+    except Exception:
+        state = {}
+
+    iters = state.get("iterations") or {}
+    if not iters.get("enabled"):
+        return ""
+
+    lines: list[str] = []
+    lines.append("## Field Lineage Summary")
+    lines.append("")
+    outcome = (
+        "CONVERGED" if iters.get("converged")
+        else "DIAGNOSE_REQUIRED" if iters.get("diagnosis_required")
+        else "CAP_REACHED" if iters.get("cap_reached")
+        else "PENDING"
+    )
+    lines.append(
+        f"- Iteration outcome: **{outcome}** in "
+        f"{iters.get('iterations_completed', 0)} iterations"
+    )
+
+    counts = {"paper_span": 0, "enricher_fill": 0,
+              "oracle_reading": 0, "replanner_revision": 0}
+    field_blocks: list[str] = []
+    for step in proto.get("sequential_steps", []):
+        for field, head in (step.get("field_lineage") or {}).items():
+            path = f"step_{step['step_number']}.{field}"
+            cur = head
+            chain = []
+            while cur is not None:
+                chain.append(cur)
+                counts[cur.get("source_type", "")] = counts.get(cur.get("source_type", ""), 0) + 1
+                cur = cur.get("parent")
+            chain.reverse()
+            if any(c.get("source_type") in ("oracle_reading", "replanner_revision") for c in chain):
+                block = [f"### {path}"]
+                for c in chain:
+                    iter_tag = (
+                        f" (iter {c.get('iteration_index')})"
+                        if c.get("iteration_index") is not None else ""
+                    )
+                    line = f"- **{c.get('source_type')}**{iter_tag}: value=`{c.get('value')}`"
+                    detail = c.get(c.get("source_type") or "") or {}
+                    if c.get("source_type") == "replanner_revision":
+                        line += f" — action=`{detail.get('action')}`, rule=`{detail.get('rule_id')}`"
+                        if detail.get("citation_failure"):
+                            line += " — **citation_failure**"
+                    elif c.get("source_type") == "oracle_reading":
+                        line += f" — regime=`{detail.get('regime_label')}`, cq=`{detail.get('cq')}`"
+                    cites = c.get("citations") or []
+                    if cites:
+                        line += "\n  - cites: " + ", ".join(f"`{k}`" for k in cites)
+                    block.append(line)
+                field_blocks.append("\n".join(block))
+
+    lines.append(
+        f"- Source-type counts across all fields: "
+        f"paper_span={counts['paper_span']}, "
+        f"enricher_fill={counts['enricher_fill']}, "
+        f"oracle_reading={counts['oracle_reading']}, "
+        f"replanner_revision={counts['replanner_revision']}"
+    )
+    if field_blocks:
+        lines.append("")
+        lines.extend(field_blocks)
+    return "\n".join(lines) + "\n"
