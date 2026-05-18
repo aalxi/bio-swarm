@@ -63,6 +63,7 @@ def _ts() -> str:
 async def start_run(payload: dict):
     user_input = (payload.get("input") or "").strip()
     mode = payload.get("mode")
+    enable_iteration: bool = bool(payload.get("enable_iteration", False))
     if not user_input:
         raise HTTPException(400, "Missing 'input'")
     if mode not in ("wet_lab", "dry_lab"):
@@ -86,6 +87,7 @@ async def start_run(payload: dict):
                 mode=mode,
                 task_id=task_id,
                 status_callback=callback,
+                enable_iteration=enable_iteration,
             )
         except Exception as e:
             tb = traceback.format_exc()
@@ -194,6 +196,27 @@ async def download(task_id: str, kind: str = "script"):
     if not os.path.exists(path):
         raise HTTPException(404, "File not available")
     return FileResponse(path, media_type=media, filename=filename)
+
+
+# ── Lineage endpoint ────────────────────────────────────────────────────────
+
+@app.get("/lineage/{task_id}")
+def get_lineage(task_id: str):
+    """Return field-level lineage for all steps in a protocol, plus the citation registry."""
+    from pathlib import Path as _Path
+
+    path = _Path(f"workspace/extracted_protocols/protocol_{task_id}.json")
+    if not path.exists():
+        raise HTTPException(404, f"protocol not found for task_id={task_id}")
+    proto = json.loads(path.read_text())
+    fields: dict[str, dict] = {}
+    for step in proto.get("sequential_steps", []):
+        for field, fl_json in (step.get("field_lineage") or {}).items():
+            fields[f"step_{step['step_number']}.{field}"] = fl_json
+
+    from tools.citation_registry import REGISTRY
+    registry = {k: c.model_dump() for k, c in REGISTRY.items()}
+    return {"fields": fields, "registry": registry}
 
 
 # ── Static + index (registered last so they don't shadow API routes) ────────
