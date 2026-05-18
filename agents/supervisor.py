@@ -9,13 +9,30 @@ from agents.methodology import methodology_agent
 from agents.enricher import enricher_agent
 from agents.coder import coder_agent
 from agents.synthesizer import synthesizer_agent
+from agents.results_reader import results_reader_agent
+from agents.replanner import replanner_agent
+from tools.mock_qpcr import simulate_qpcr_well
 from tools.token_tracker import print_summary as print_token_summary
+
+import hashlib
+
+MAX_ITERATIONS = 3
+DEMO_FIELD_PATH = "step_1.template_amount_ng"
+
+
+def _seed_for(task_id: str, iteration_index: int) -> int:
+    """Stable 32-bit seed across processes (reviewer issue #8)."""
+    digest = hashlib.md5(f"{task_id}:{iteration_index}".encode()).digest()
+    return int.from_bytes(digest[:4], "big")
 
 
 STATE_PATH = "workspace/state.json"
 
 
-def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None) -> dict:
+def run_pipeline(
+    user_input: str, mode: str, task_id: str,
+    status_callback=None, enable_iteration: bool = False,
+) -> dict:
     """Run the full BioSwarm pipeline: research → extraction → coding → synthesis.
 
     Pure Python orchestrator — no LLM calls. Calls each agent in sequence,
@@ -37,6 +54,7 @@ def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None)
     state = WorkspaceState(
         task_id=task_id, mode=mode, user_input=user_input, status="research"
     )
+    state.iterations.enabled = enable_iteration
     _save_state(state)
 
     # --- 1. Research ---
@@ -166,6 +184,16 @@ def run_pipeline(user_input: str, mode: str, task_id: str, status_callback=None)
     state.coding.simulation_passed = True
     state.status = "synthesis"
     _save_state(state)
+
+    # --- 3b. Iteration phase (gated; wet-lab only) ---
+    if mode == "wet_lab":
+        iter_result = _run_iteration_phase(
+            state, state.extraction.protocol_file, status_callback,
+        )
+        if iter_result.get("status") != "success":
+            return _handle_error(state, "iteration", iter_result, status_callback)
+        state.status = "synthesis"
+        _save_state(state)
 
     # --- 4. Synthesis ---
     _emit_start(status_callback, "synthesis")
@@ -301,3 +329,219 @@ def _synthesize_on_failure(
         state.synthesis.synthesized_on_failure = True
         state.synthesis.done = True
         _save_state(state)
+
+
+# ---------------------------------------------------------------------------
+# Iteration phase (Task 2.8 — closed-loop oracle → reader → replanner)
+# ---------------------------------------------------------------------------
+
+def _read_field_value(protocol_path: str, field_path: str):
+    proto = load_json(protocol_path)
+    head, field = field_path.split(".", 1)
+    step_number = int(head[len("step_"):])
+    for s in proto.get("sequential_steps", []):
+        if s.get("step_number") == step_number:
+            return s.get(field)
+    return None
+
+
+def _apply_revision_to_protocol(protocol_path: str, field_path: str,
+                                new_value) -> None:
+    proto = load_json(protocol_path)
+    head, field = field_path.split(".", 1)
+    step_number = int(head[len("step_"):])
+    for s in proto.get("sequential_steps", []):
+        if s.get("step_number") == step_number:
+            s[field] = new_value
+            break
+    save_json(proto, protocol_path)
+
+
+def _save_iteration_lineage_snapshot(task_id: str, field_path: str,
+                                     protocol_path: str) -> None:
+    """Snapshot the current field's lineage to workspace/lineage/{task_id}/."""
+    import os
+    os.makedirs(f"workspace/lineage/{task_id}", exist_ok=True)
+    proto = load_json(protocol_path)
+    head, field = field_path.split(".", 1)
+    step_number = int(head[len("step_"):])
+    for s in proto.get("sequential_steps", []):
+        if s.get("step_number") == step_number:
+            fl = s.get("field_lineage", {}).get(field)
+            if fl is not None:
+                save_json(
+                    fl,
+                    f"workspace/lineage/{task_id}/{field_path}.json",
+                )
+            return
+
+
+def _emit_iter(callback, kind: str, iteration_index: int, **extras):
+    payload = {
+        "type": kind, "phase": "iteration", "ts": _ts(),
+        "iteration_index": iteration_index,
+    }
+    payload.update(extras)
+    _notify(callback, payload)
+
+
+def _run_iteration_phase(state, protocol_path: str, status_callback) -> dict:
+    """The new closed-loop phase. Runs only when state.iterations.enabled.
+    Emits per-iteration phase_start/phase_end events with iteration_index."""
+    if not state.iterations.enabled:
+        return {
+            "status": "success", "output_files": [],
+            "message": "iteration phase skipped (disabled)",
+            "retry_count": 0, "error_detail": None,
+        }
+
+    state.status = "iteration"
+    _save_state(state)
+
+    from schemas.state_schema import IterationOracleRecord, IterationRevision
+
+    for i in range(1, MAX_ITERATIONS + 1):
+        _emit_iter(status_callback, "phase_start", iteration_index=i)
+
+        current_value = _read_field_value(protocol_path, DEMO_FIELD_PATH)
+        if current_value is None:
+            return {
+                "status": "error", "output_files": [],
+                "message": f"DEMO_FIELD_PATH {DEMO_FIELD_PATH} not in protocol",
+                "retry_count": 0,
+                "error_detail": f"step_1.template_amount_ng is None",
+            }
+
+        reading = simulate_qpcr_well(
+            float(current_value),
+            seed=_seed_for(state.task_id, i),
+            raw_record_dir=f"workspace/iterations/{i}",
+        )
+        reader_result = results_reader_agent(
+            reading, protocol_path, iteration_index=i, field_path=DEMO_FIELD_PATH,
+        )
+        if reader_result.get("status") != "success":
+            _emit_iter(status_callback, "phase_end",
+                       iteration_index=i, status="error")
+            return reader_result
+
+        state.iterations.records.append(
+            IterationOracleRecord(**reader_result["oracle_record"])
+        )
+
+        replan_result = replanner_agent(
+            reading=reading, protocol_path=protocol_path,
+            iteration_index=i, field_path=DEMO_FIELD_PATH,
+            current_value=float(current_value),
+        )
+        if replan_result.get("status") != "success":
+            _emit_iter(status_callback, "phase_end",
+                       iteration_index=i, status="error")
+            return replan_result
+
+        action = replan_result["action"]
+        state.iterations.revisions.append(IterationRevision(
+            iteration_index=i, action=action,
+            field_changed="template_amount_ng",
+            new_value=replan_result.get("new_value"),
+            rationale=replan_result.get("rationale", ""),
+            citation_keys=replan_result.get("citation_keys", []),
+            citation_failure=replan_result.get("citation_failure", False),
+        ))
+        state.iterations.iterations_completed = i
+        _save_iteration_lineage_snapshot(state.task_id, DEMO_FIELD_PATH, protocol_path)
+
+        _emit_iter(
+            status_callback, "phase_end", iteration_index=i, status="success",
+            cq=reading.cq, regime=reading.regime_label, action=action,
+        )
+
+        if action == "converged":
+            state.iterations.converged = True
+            break
+        if action == "diagnose_required":
+            state.iterations.diagnosis_required = True
+            break
+
+        _apply_revision_to_protocol(
+            protocol_path, DEMO_FIELD_PATH, replan_result["new_value"],
+        )
+
+    state.iterations.cap_reached = (
+        state.iterations.iterations_completed == MAX_ITERATIONS
+        and not state.iterations.converged
+        and not state.iterations.diagnosis_required
+    )
+    state.iterations.done = True
+    _save_state(state)
+    return {
+        "status": "success", "output_files": [protocol_path],
+        "message": (
+            f"iteration phase: completed={state.iterations.iterations_completed}, "
+            f"converged={state.iterations.converged}, "
+            f"diagnosis_required={state.iterations.diagnosis_required}, "
+            f"cap_reached={state.iterations.cap_reached}"
+        ),
+        "retry_count": 0, "error_detail": None,
+    }
+
+
+def run_pipeline_from_demo(
+    user_input: str, mode: str, task_id: str,
+    protocol_path: str, enable_iteration: bool, status_callback=None,
+) -> dict:
+    """Skip research+methodology+enrichment; start at coding with the demo
+    cache already installed at protocol_path."""
+    state = WorkspaceState(
+        task_id=task_id, mode=mode, user_input=user_input, status="coding",
+    )
+    state.research.done = True
+    state.extraction.done = True
+    state.extraction.protocol_file = protocol_path
+    state.extraction.schema_valid = True
+    state.enrichment.skipped = True
+    state.iterations.enabled = enable_iteration
+    _save_state(state)
+
+    _emit_start(status_callback, "coding")
+    try:
+        coder_result = coder_agent(
+            {"output_files": [protocol_path]}, mode, task_id,
+        )
+    except Exception as e:
+        coder_result = _exception_contract(e)
+    _emit_end(status_callback, "coding", coder_result)
+    if coder_result.get("status") != "success":
+        return _handle_error(state, "coding", coder_result, status_callback)
+    out_files = coder_result.get("output_files", [])
+    state.coding.done = True
+    state.coding.script_file = out_files[0] if out_files else None
+    state.coding.simulation_passed = True
+    _save_state(state)
+
+    if mode == "wet_lab":
+        iter_result = _run_iteration_phase(state, protocol_path, status_callback)
+        if iter_result.get("status") != "success":
+            return _handle_error(state, "iteration", iter_result, status_callback)
+
+    state.status = "synthesis"
+    _save_state(state)
+    _emit_start(status_callback, "synthesis")
+    try:
+        synth_result = synthesizer_agent(task_id)
+    except Exception as e:
+        synth_result = _exception_contract(e)
+    _emit_end(status_callback, "synthesis", synth_result)
+    if synth_result.get("status") != "success":
+        return _handle_error(state, "synthesis", synth_result, status_callback)
+    out_files = synth_result.get("output_files", [])
+    state.synthesis.done = True
+    state.synthesis.report_file = out_files[0] if out_files else None
+    state.status = "complete"
+    _save_state(state)
+    print_token_summary()
+    return {
+        "status": "success", "task_id": task_id,
+        "report_file": state.synthesis.report_file,
+        "state": state.model_dump(),
+    }

@@ -99,13 +99,26 @@ Determine the Reproducibility Score using these rules:
 - PARTIAL — At least one of: (1) dependencies installed but some packages had warnings or version conflicts, (2) main script ran but exited non-zero or produced partial output, (3) some but not all expected outputs were generated, (4) random seeds are absent making exact reproduction uncertain but execution succeeded.
 - FAIL — Any of: (1) dependency installation failed entirely, (2) main script could not be executed or crashed, (3) repository could not be cloned, (4) critical data files are missing and code attempts to load them, (5) no expected outputs were produced.
 
+HARD SCORE FLOORS (apply BEFORE the rubric above; do not soften with hedging):
+- If `requirements_install.discovery.completeness_score < 1.0`, the score MUST be at most PARTIAL.
+- If `requirements_install.discovery.completeness_score < 0.5`, the score MUST be FAIL.
+- If `requirements_install.discovery.strategy == "none"`, the score MUST be FAIL.
+- If `fabricated_success_check.fabricated == true`, the score MUST be FAIL (clean exit but no scientific work happened).
+
 The Markdown report MUST include these 9 sections IN THIS EXACT ORDER (use clear ## headings):
 
 1. ## Paper & Repository Summary — Summarize the paper's computational goal, the repository structure, and what was attempted. Include the GitHub URL, main script path, and README highlights if available from the diagnostics. Mention the paper title and source.
 
 2. ## Reproducibility Score — State exactly one of **PASS**, **PARTIAL**, or **FAIL** on its own line, in bold and ALL CAPS. Follow with 2-3 sentences justifying the score with specific evidence (e.g., "pip install exited with code 0 and no failure lines were detected" or "main script exited with code 1; stderr shows ModuleNotFoundError for package X").
 
-3. ## Dependency Analysis — List key packages from requirements.txt (cite actual names). Report pip install exit_code and success status. If there were dep_failures in diagnostics, list each failed line verbatim. Note any version pins, conflicts, or missing packages. If NO_REQUIREMENTS_FILE, state that explicitly.
+3. ## Dependency Analysis — Read `requirements_install.discovery` and render exactly the variant that matches `strategy`:
+   - `pip_requirements` (completeness 1.0): "Installed from `requirements.txt`."
+   - `pip_requirements+editable`: "Installed from `requirements.txt` plus the repo itself in editable mode (`pip install -e .`)."
+   - `env_yml_translated` with completeness 1.0: "Translated `env.yml`/`environment.yml` to pip; all packages installable from PyPI."
+   - `env_yml_translated` with completeness < 1.0: "⚠ Translated `env.yml`/`environment.yml` to pip. {N} bioconda/R/system packages could NOT be translated and are MISSING from the environment: {list `untranslatable_packages` verbatim}. The reproducibility score is floored at PARTIAL (or FAIL if completeness < 0.5)."
+   - `pip_editable`: "Installed in editable mode from `pyproject.toml`/`setup.py`."
+   - `none`: "No environment file found in the repo. Reproducibility cannot be assessed without manual intervention. Score MUST be FAIL."
+   Then state `discovered_files`, the install `exit_code`, and `success`. If `dep_failures` is non-empty (env.yml leniency mode), list each verbatim. List failures from `diagnostics.dep_failures` too if distinct.
 
 4. ## Data Availability — Report what data files were found in the repository (from diagnostics.data_files_found). Cross-reference with data-loading code references (diagnostics.data_load_code_refs). Flag any files the code tries to load that are not present in the repo. Note any data_download_urls from the protocol.
 
@@ -113,7 +126,11 @@ The Markdown report MUST include these 9 sections IN THIS EXACT ORDER (use clear
 
 6. ## Execution Results — Report the main script command, exit_code, and success status. Quote relevant portions of stdout (first/last lines showing key results, errors, or warnings). If the script produced output files (from diagnostics.generated_files), list them. Note any generated figures (diagnostics.generated_figures).
 
-7. ## Output Verification — Compare expected_outputs from the protocol against expected_outputs_found and expected_outputs_missing in the run log. For each expected output, state whether it was found and downloaded, or report the download_error. If diagnostics.generated_files differ from expected, note discrepancies.
+7. ## Output Verification — Read `expected_outputs_classified` (a dict with keys file_path, directory_path, paper_deliverable, geo_accession, url, unresolved). Render THREE subsections:
+   - **On-disk file artifacts**: for each entry in `file_path`, state whether it appears in `expected_outputs_found` (✓ downloaded) or `expected_outputs_missing` (✗ missing). If a `download_errors` entry exists for that path, quote the error.
+   - **On-disk directory artifacts**: for each entry in `directory_path`, read `directory_outputs_populated[entry]` (from the fabricated-success detector). ✓ if the directory gained contents during the run, ✗ otherwise.
+   - **Claimed deliverables (not on-disk files)**: list each entry in `paper_deliverable` and `geo_accession` verbatim. State explicitly that these are paper figures/datasets, NOT files in the repo — and that the reproducibility score reflects whether the *code* could produce them, not whether their string names matched a path. Do NOT report download_errors for these.
+   If `fabricated_success_check.fabricated == true`, prefix this section with a bold "⚠ Fabricated success detected: {reason}" line.
 
 8. ## Recommendations — Provide 3-5 specific, actionable recommendations for improving reproducibility. Examples: "Pin numpy to version X.Y.Z as seen in the error log", "Add a random seed call before the training loop in script.py", "Include the missing dataset file X.csv or add a download script", "Add a requirements.txt with pinned versions". Each recommendation must reference specific evidence from the analysis above.
 
@@ -445,6 +462,16 @@ def synthesizer_agent(task_id: str) -> dict[str, Any]:
             str(e),
         )
 
+    # Append Field Lineage Summary section for wet-lab runs with iteration data
+    if mode == "wet_lab":
+        lineage_section = _render_field_lineage_section(task_id)
+        if lineage_section:
+            report_md = report + "\n" + lineage_section
+            try:
+                save_text(report_md, out_path)
+            except OSError:
+                pass  # already saved above; lineage append is best-effort
+
     return _contract(
         "success",
         [out_path],
@@ -452,3 +479,82 @@ def synthesizer_agent(task_id: str) -> dict[str, Any]:
         0,
         None,
     )
+
+
+def _render_field_lineage_section(task_id: str) -> str:
+    """Return a markdown 'Field Lineage Summary' section. Reads
+    workspace/extracted_protocols/protocol_{task_id}.json and
+    workspace/state.json. Safe to call even when no iterations ran."""
+    from tools.file_tool import load_json
+    try:
+        proto = load_json(f"workspace/extracted_protocols/protocol_{task_id}.json")
+    except Exception:
+        return ""
+    try:
+        state = load_json("workspace/state.json")
+    except Exception:
+        state = {}
+
+    iters = state.get("iterations") or {}
+    if not iters.get("enabled"):
+        return ""
+
+    lines: list[str] = []
+    lines.append("## Field Lineage Summary")
+    lines.append("")
+    outcome = (
+        "CONVERGED" if iters.get("converged")
+        else "DIAGNOSE_REQUIRED" if iters.get("diagnosis_required")
+        else "CAP_REACHED" if iters.get("cap_reached")
+        else "PENDING"
+    )
+    lines.append(
+        f"- Iteration outcome: **{outcome}** in "
+        f"{iters.get('iterations_completed', 0)} iterations"
+    )
+
+    counts = {"paper_span": 0, "enricher_fill": 0,
+              "oracle_reading": 0, "replanner_revision": 0}
+    field_blocks: list[str] = []
+    for step in proto.get("sequential_steps", []):
+        for field, head in (step.get("field_lineage") or {}).items():
+            path = f"step_{step['step_number']}.{field}"
+            cur = head
+            chain = []
+            while cur is not None:
+                chain.append(cur)
+                counts[cur.get("source_type", "")] = counts.get(cur.get("source_type", ""), 0) + 1
+                cur = cur.get("parent")
+            chain.reverse()
+            if any(c.get("source_type") in ("oracle_reading", "replanner_revision") for c in chain):
+                block = [f"### {path}"]
+                for c in chain:
+                    iter_tag = (
+                        f" (iter {c.get('iteration_index')})"
+                        if c.get("iteration_index") is not None else ""
+                    )
+                    line = f"- **{c.get('source_type')}**{iter_tag}: value=`{c.get('value')}`"
+                    detail = c.get(c.get("source_type") or "") or {}
+                    if c.get("source_type") == "replanner_revision":
+                        line += f" — action=`{detail.get('action')}`, rule=`{detail.get('rule_id')}`"
+                        if detail.get("citation_failure"):
+                            line += " — **citation_failure**"
+                    elif c.get("source_type") == "oracle_reading":
+                        line += f" — regime=`{detail.get('regime_label')}`, cq=`{detail.get('cq')}`"
+                    cites = c.get("citations") or []
+                    if cites:
+                        line += "\n  - cites: " + ", ".join(f"`{k}`" for k in cites)
+                    block.append(line)
+                field_blocks.append("\n".join(block))
+
+    lines.append(
+        f"- Source-type counts across all fields: "
+        f"paper_span={counts['paper_span']}, "
+        f"enricher_fill={counts['enricher_fill']}, "
+        f"oracle_reading={counts['oracle_reading']}, "
+        f"replanner_revision={counts['replanner_revision']}"
+    )
+    if field_blocks:
+        lines.append("")
+        lines.extend(field_blocks)
+    return "\n".join(lines) + "\n"

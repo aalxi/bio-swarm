@@ -1,0 +1,34 @@
+{
+  "protocol_name": "Demo RT-qPCR with crude-extract template",
+  "paper_source": "demo://rt_qpcr_v1 (synthetic — see citations)",
+  "labware_setup": [
+    "opentrons_96_wellplate_200ul_pcr_full_skirt",
+    "opentrons_96_tiprack_20ul"
+  ],
+  "pipettes": ["p20_single_gen2"],
+  "reagents": [
+    "SYBR Green PCR Master Mix (2x)",
+    "Forward primer (10 µM)",
+    "Reverse primer (10 µM)",
+    "cDNA template (crude lysate)"
+  ],
+  "sequential_steps": [
+    {
+      "step_number": 1, "action": "transfer",
+      "volume_ul": 2.0, "template_amount_ng": 100.0,
+      "source_location": "A1", "destination_location": "B1",
+      "notes": "Add 100 ng template per well. Crude lysate; matrix-specific inhibition risk per Schrader 2012.",
+      "field_lineage": {}
+    },
+    {
+      "step_number": 2, "action": "incubate",
+      "temperature_celsius": 95.0, "duration_seconds": 600,
+      "notes": "Initial denaturation",
+      "field_lineage": {}
+    }
+  ],
+  "extraction_notes": [
+    "Demo cache. Starting template_amount_ng=100 deliberately chosen so iter-1 produces inhibition_suspected regime. Citation chain through MIQE_essential_inhibition_testing and PCR_inhibition_matrix_specific_schrader_2012 must fire."
+  ],
+  "pie_ran": false
+}

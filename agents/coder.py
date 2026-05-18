@@ -22,6 +22,11 @@ from schemas.opentrons_schema import OpentronsProtocol
 from tools import daytona_tool
 from tools.file_tool import load_json, save_json, save_text
 
+try:
+    import yaml as _yaml  # pyyaml — required for env.yml translation (Layer 2 A5)
+except ImportError:
+    _yaml = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 _client: OpenAI | None = None
@@ -44,6 +49,251 @@ LIQUID_COVERAGE_THRESHOLD = 0.5
 # Shared sandbox constants — used by both wet and dry lab flows
 UV = "/usr/local/py-utils/bin/uv"
 VENV = "/home/daytona/venv311"
+
+# ── Layer 2 A5: env-file translation helpers ─────────────────────────────────
+# Packages that are bioconda-only, R, or system-level — no PyPI equivalent.
+# Built from inspection of five real bio-ML env.yml files (Riboformer, OpenFold,
+# DiffDock, ESM, RoseTTAFold). Routed to `untranslatable_packages` so the
+# synthesizer can floor the reproducibility score honestly.
+_KNOWN_BIOCONDA_ONLY: set[str] = {
+    # Bioinformatics CLI tools
+    "samtools", "bedtools", "bwa", "star", "salmon", "kallisto", "seqkit",
+    "hmmer", "hhsuite", "kalign2", "kalign", "blast", "blast-legacy", "psipred",
+    "bcftools", "mafft", "muscle", "fastqc", "trimmomatic", "bowtie2",
+    "minimap2", "subread", "stringtie",
+    # System / build tools (when listed as conda deps)
+    "cuda", "cudatoolkit", "cudnn", "gcc", "gxx", "g++", "git", "aria2", "awscli",
+    "make", "cmake", "ninja", "openmpi", "mpi",
+    # PyTorch ecosystem pieces that need specific torch+cuda combos
+    "pytorch", "pytorch-cuda", "pytorch-cluster", "pytorch-scatter",
+    "pytorch-sparse", "pytorch-spline-conv", "pytorch-geometric",
+    # Conda-only scientific packages
+    "openmm", "pdbfixer",
+    # R ecosystem
+    "r-base", "r",
+    # System libs (rosettafold-style export dumps)
+    "blas", "mkl", "mkl-service", "mkl_fft", "mkl_random", "intel-openmp",
+    "openssl", "zlib", "zstd", "lz4-c", "libgcc-ng", "libstdcxx-ng",
+    "libffi", "libpng", "libtiff", "libwebp-base", "ncurses", "readline",
+    "sqlite", "tk", "xz", "freetype", "libuv", "libiconv", "libtasn1",
+    "libunistring", "libidn2", "libgfortran-ng", "libgfortran4", "libgomp",
+    "bzip2", "ca-certificates", "ffmpeg", "openh264", "nettle", "gnutls",
+    "gmp", "lame", "lcms2", "jpeg", "openh264",
+}
+_BIOCONDA_PATTERNS = (
+    re.compile(r"^_"),                 # _libgcc_mutex, _openmp_mutex
+    re.compile(r"^bioconductor-"),
+    re.compile(r"^ld_impl_"),
+    re.compile(r"^libgfortran"),
+)
+# Names dropped silently (neither installed nor counted as untranslatable):
+#   python, pip → handled by venv setup itself.
+#   defaults → a channel name that sometimes leaks into dependencies.
+#   torch family → handled by the CPU-only torch preinstall.
+_CONDA_DROP: set[str] = {
+    "python", "pip", "defaults", "setuptools", "wheel",
+    "torch", "torchvision", "torchaudio",
+}
+
+
+def _yml_to_pip_requirements(yml_text: str) -> tuple[list[str], list[str]]:
+    """Translate a minimal subset of conda env.yml/environment.yml to pip.
+
+    Returns (translatable, untranslatable):
+      - translatable: pip-compatible requirement strings ready for `uv pip install`
+      - untranslatable: package names dropped because they're bioconda/R/system-only
+
+    Drops `python`, `pip`, `defaults`, `setuptools`, `wheel`, and the torch family
+    silently (the venv setup and CPU-torch preinstall handle them separately).
+
+    Handles patterns observed in five real bio-ML env.yml files:
+      - Channel prefixes (`bioconda::samtools`, `pytorch::pytorch=2.5`) → strip
+        prefix; route bioconda/biocore-prefixed pkgs to `untranslatable`.
+      - Build strings (`numpy=1.20.2=py38h2d18471_0`) → drop the third `=` field.
+      - Wildcard pins (`protobuf=3.20.*`) → translated to `protobuf==3.20.*`.
+      - Multiple `pip:` subsections (DiffDock) → unioned in order.
+      - pip flags (`--extra-index-url`, `--find-links`) → passed through verbatim.
+      - git+https URLs → passed through verbatim.
+
+    On parse failure or missing pyyaml, returns ([], []).
+    """
+    if _yaml is None:
+        return [], []
+    try:
+        data = _yaml.safe_load(yml_text)
+    except Exception:
+        return [], []
+    if not isinstance(data, dict):
+        return [], []
+    deps = data.get("dependencies") or []
+    if not isinstance(deps, list):
+        return [], []
+
+    translatable: list[str] = []
+    untranslatable: list[str] = []
+
+    for entry in deps:
+        # pip subsection — may appear multiple times in the dependencies list
+        if isinstance(entry, dict):
+            pip_list = entry.get("pip") or []
+            if isinstance(pip_list, list):
+                for item in pip_list:
+                    if not isinstance(item, str):
+                        continue
+                    s = item.strip()
+                    if s and not s.startswith("#"):
+                        translatable.append(s)
+            continue
+
+        if not isinstance(entry, str):
+            continue
+
+        s = entry.strip()
+        if not s or s.startswith("#"):
+            continue
+
+        # Channel prefix: bioconda::samtools=1.17 → channel="bioconda", s="samtools=1.17"
+        channel = ""
+        if "::" in s:
+            channel, s = s.split("::", 1)
+            channel = channel.strip().lower()
+            s = s.strip()
+
+        # Strip conda build-string field: pkg=ver=build → pkg=ver.
+        # Conda's 3-part syntax uses single `=` separators; pip-style `pkg==ver`
+        # has an empty middle field and must NOT be stripped this way.
+        if "==" not in s and s.count("=") >= 2:
+            parts = s.split("=")
+            if len(parts) >= 3 and parts[0] and parts[1]:
+                s = f"{parts[0]}={parts[1]}"
+
+        name = re.split(r"[=<>!~ ]", s, 1)[0].strip().lower()
+        if not name:
+            continue
+        if name in _CONDA_DROP:
+            continue
+        if channel in ("bioconda", "biocore"):
+            untranslatable.append(name)
+            continue
+        if name in _KNOWN_BIOCONDA_ONLY:
+            untranslatable.append(name)
+            continue
+        if any(p.match(name) for p in _BIOCONDA_PATTERNS):
+            untranslatable.append(name)
+            continue
+
+        # If already a pip-style spec (==, >=, <=, !=, ~=) pass through.
+        # Otherwise translate conda single `=` to pip `==`.
+        if any(op in s for op in ("==", ">=", "<=", "!=", "~=")):
+            req = s
+        elif "=" in s:
+            req = s.replace("=", "==", 1)
+        else:
+            req = s
+        translatable.append(req)
+
+    return translatable, untranslatable
+
+
+# ── Layer 2: expected_outputs classifier ─────────────────────────────────────
+# Test 4 (Riboformer) tried to download "Fig 2b" as a file path. Classifier
+# routes only file-shaped entries to the download loop; paper deliverables
+# and GEO accessions are surfaced separately in the report.
+_GEO_RE = re.compile(r"^GS[EM]\d{3,}$", re.IGNORECASE)
+_FIG_RE = re.compile(
+    r"^(Fig(?:ure)?|Table|Supplementary|Suppl|Extended Data|Source Data)\b",
+    re.IGNORECASE,
+)
+_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+_FILE_RE = re.compile(r"^[\w./\- ]+\.[A-Za-z0-9]{1,8}$")
+
+
+def _classify_expected_output(entry: str) -> str:
+    """Returns one of: file_path, directory_path, paper_deliverable,
+                       geo_accession, url, unresolved."""
+    s = (entry or "").strip()
+    if not s:
+        return "unresolved"
+    if _URL_RE.match(s):
+        return "url"
+    if _GEO_RE.match(s):
+        return "geo_accession"
+    if _FIG_RE.match(s):
+        return "paper_deliverable"
+    if _FILE_RE.match(s):
+        return "file_path"
+    if s.startswith(("/", "./", "../")) and "." in s.rsplit("/", 1)[-1]:
+        return "file_path"
+    if "/" in s and not s.endswith((".", "?")):
+        # results/, figures/, checkpoints/output
+        return "directory_path"
+    return "unresolved"
+
+
+def _check_dry_lab_fabricated_success(
+    run_log: dict,
+    files_before: set[str],
+    files_after: set[str],
+) -> dict:
+    """Detect 'clean exit but no scientific work happened' on the dry-lab side.
+
+    Ports the wet-lab silent-no-op discipline (LIQUID_RE). Returns a dict
+    with `fabricated: bool`, `reason: str | None`, `new_files: list[str]`,
+    and `directory_outputs_populated: dict[str, bool]`.
+
+    Failure criteria (all must hold for fabricated=True):
+      - main_script exit_code == 0
+      - no new files appeared in the repo working tree
+      - no file in classified.file_path is present on disk
+      - no directory in classified.directory_path gained contents
+    """
+    main = run_log.get("main_script") or {}
+    classified = run_log.get("expected_outputs_classified") or {}
+    file_paths = classified.get("file_path") or []
+    dir_paths = classified.get("directory_path") or []
+    found_files = run_log.get("expected_outputs_found") or []
+    generated_files = (run_log.get("diagnostics") or {}).get("generated_files") or []
+
+    new_files = sorted(files_after - files_before)
+    directory_outputs_populated: dict[str, bool] = {}
+    for d in dir_paths:
+        d_norm = d.strip().lstrip("/").rstrip("/") + "/"
+        populated = any(f.lstrip("/").startswith(d_norm) for f in new_files)
+        directory_outputs_populated[d] = populated
+
+    exit_code = main.get("exit_code")
+    if exit_code != 0:
+        return {
+            "fabricated": False,
+            "reason": None,
+            "new_files": new_files,
+            "directory_outputs_populated": directory_outputs_populated,
+        }
+    if new_files or generated_files or found_files:
+        return {
+            "fabricated": False,
+            "reason": None,
+            "new_files": new_files,
+            "directory_outputs_populated": directory_outputs_populated,
+        }
+    if any(directory_outputs_populated.values()):
+        return {
+            "fabricated": False,
+            "reason": None,
+            "new_files": new_files,
+            "directory_outputs_populated": directory_outputs_populated,
+        }
+
+    return {
+        "fabricated": True,
+        "reason": (
+            "Exit code 0 but zero new files in the working tree, zero expected "
+            "file_path artifacts on disk, and zero expected directory_path "
+            "entries gained contents."
+        ),
+        "new_files": new_files,
+        "directory_outputs_populated": directory_outputs_populated,
+    }
 
 WET_LAB_CODEGEN_SYSTEM_PROMPT = """\
 You are an Opentrons OT-2 protocol author. You receive a JSON protocol definition
@@ -661,30 +911,65 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
             else:
                 _log("Repo already has requirements.txt — ignoring LLM-extracted requirements_file")
 
-        # ── CPU-only torch handling ──────────────────────────────────────
-        # torch 2.x + its transitive nvidia-* deps total ~2GB, blowing the
-        # Daytona sandbox disk. Strategy: strip torch and nvidia-* lines
-        # from requirements.txt, install torch from the CPU-only index,
-        # then install the remaining requirements. The CPU torch build
-        # satisfies downstream imports without pulling CUDA libs.
-        torch_probe = daytona_tool.run_cmd(
-            sandbox,
-            "grep -l -i -E '^\\s*torch([=<>!~ ]|$)' "
-            "/home/daytona/repo/requirements.txt "
-            "/home/daytona/repo/pyproject.toml "
-            "/home/daytona/repo/setup.py 2>/dev/null | head -1",
-            timeout=10,
+        # ── Layer 2 A5: env-file discovery dispatcher ────────────────────
+        # Replaces the old bash if/elif chain and the NO_REQUIREMENTS_FILE
+        # sentinel. Single `find` to enumerate every plausible env file in the
+        # repo; Python-side dispatcher picks the install strategy and records
+        # a structured `discovery` block so the synthesizer can floor the
+        # reproducibility score honestly.
+        discover_cmd = (
+            "find /home/daytona/repo -maxdepth 2 -type f \\( "
+            "-name 'requirements*.txt' -o -name 'pyproject.toml' "
+            "-o -name 'setup.py' -o -name 'setup.cfg' -o -name 'Pipfile' "
+            "-o -name 'env*.yml' -o -name 'env*.yaml' "
+            "-o -name 'environment*.yml' -o -name 'environment*.yaml' "
+            "\\) ! -path '*/.git/*' 2>/dev/null"
         )
-        if (torch_probe["stdout"] or "").strip():
-            _log("torch detected in requirements — stripping torch/nvidia-* lines...")
-            daytona_tool.run_cmd(
-                sandbox,
-                "sed -i -E '/^[[:space:]]*(torch([=<>!~[:space:]]|$)|"
-                "torchvision|torchaudio|nvidia[-_])/d' "
-                "/home/daytona/repo/requirements.txt 2>/dev/null || true",
-                timeout=10,
+        discover_run = daytona_tool.run_cmd(sandbox, discover_cmd, timeout=15)
+        discovered_full = [
+            line.strip()
+            for line in (discover_run["stdout"] or "").splitlines()
+            if line.strip()
+        ]
+        discovered_rel = [
+            p.replace("/home/daytona/repo/", "", 1) for p in discovered_full
+        ]
+        _log(f"Env discovery: found {len(discovered_rel)} file(s): {discovered_rel}")
+
+        req_txt_files = [
+            p for p in discovered_full
+            if os.path.basename(p).startswith("requirements") and p.endswith(".txt")
+        ]
+        env_yml_files = [
+            p for p in discovered_full
+            if (os.path.basename(p).startswith(("env", "environment"))
+                and p.endswith((".yml", ".yaml")))
+        ]
+        installable_files = [
+            p for p in discovered_full
+            if os.path.basename(p) in ("pyproject.toml", "setup.py", "setup.cfg", "Pipfile")
+        ]
+
+        # ── CPU-only torch handling ──────────────────────────────────────
+        # torch 2.x + nvidia-* total ~2GB, blowing the Daytona sandbox disk.
+        # Probe every discovered file (not just three hardcoded names).
+        torch_in_repo = False
+        if discovered_full:
+            grep_cmd = (
+                f"grep -l -i -E '(^|[^a-zA-Z_])(torch|pytorch)([=<>!~[:space:]]|$)' "
+                f"{' '.join(discovered_full)} 2>/dev/null | head -1"
             )
-            _log("Pre-installing CPU-only torch (timeout=600s)...")
+            torch_probe = daytona_tool.run_cmd(sandbox, grep_cmd, timeout=10)
+            torch_in_repo = bool((torch_probe["stdout"] or "").strip())
+        if torch_in_repo:
+            _log("torch/pytorch referenced in env files — stripping + CPU torch preinstall")
+            for rf in req_txt_files:
+                daytona_tool.run_cmd(
+                    sandbox,
+                    f"sed -i -E '/^[[:space:]]*(torch([=<>!~[:space:]]|$)|"
+                    f"torchvision|torchaudio|nvidia[-_])/d' {rf} 2>/dev/null || true",
+                    timeout=10,
+                )
             cpu_torch = daytona_tool.run_cmd(
                 sandbox,
                 f"{UV} pip install --python {VENV} "
@@ -692,45 +977,142 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
                 timeout=600,
             )
             _log(f"cpu torch install exit_code={cpu_torch['exit_code']} success={cpu_torch['success']}")
-            _log(f"cpu torch stdout tail:\n{(cpu_torch['stdout'] or '')[-1200:]}")
             if not cpu_torch["success"]:
-                _log("WARNING: CPU torch preinstall failed — main install may still try CUDA build")
+                _log("WARNING: CPU torch preinstall failed — proceeding anyway")
 
-        # ── Install dependencies via venv pip ─────────────────────────────
-        _log("Installing requirements via venv pip (timeout=600s)...")
-        req_check = daytona_tool.run_cmd(
-            sandbox,
-            (
-                f"bash -c '"
-                f"if [ -f /home/daytona/repo/requirements.txt ]; then "
-                f"  {UV} pip install --python {VENV} -r /home/daytona/repo/requirements.txt; "
-                f"elif [ -f /home/daytona/repo/pyproject.toml ] || [ -f /home/daytona/repo/setup.py ]; then "
-                f"  {UV} pip install --python {VENV} /home/daytona/repo; "
-                f"else "
-                f"  echo NO_REQUIREMENTS_FILE; "
-                f"fi'"
-            ),
-            timeout=600,
+        # ── Strategy dispatch ────────────────────────────────────────────
+        install_stdout_parts: list[str] = []
+        install_exit_codes: list[int] = []
+        strategies_used: list[str] = []
+        untranslatable_packages: list[str] = []
+        dep_failures_yml: list[str] = []
+        completeness_score: float = 0.0
+        install_success_overall: bool = False
+
+        def _run_install(cmd: str, label: str) -> dict:
+            _log(f"{label} (timeout=600s)...")
+            r = daytona_tool.run_cmd(sandbox, cmd, timeout=600)
+            _log(f"{label}: exit_code={r['exit_code']} success={r['success']}")
+            install_stdout_parts.append(f"=== {label} ===\n{r['stdout'] or ''}")
+            install_exit_codes.append(int(r["exit_code"] or 0))
+            return r
+
+        if req_txt_files:
+            all_ok = True
+            for rf in req_txt_files:
+                r = _run_install(
+                    f"{UV} pip install --python {VENV} -r {rf}",
+                    f"pip install -r {rf}",
+                )
+                if not r["success"]:
+                    all_ok = False
+            has_installable_pkg = any(
+                os.path.basename(p) in ("pyproject.toml", "setup.py")
+                for p in installable_files
+            )
+            if has_installable_pkg:
+                r = _run_install(
+                    f"{UV} pip install --python {VENV} -e /home/daytona/repo",
+                    "pip install -e .",
+                )
+                if not r["success"]:
+                    all_ok = False
+                strategies_used.append("pip_requirements+editable")
+            else:
+                strategies_used.append("pip_requirements")
+            completeness_score = 1.0
+            install_success_overall = all_ok
+        elif env_yml_files:
+            strategies_used.append("env_yml_translated")
+            yml_path = env_yml_files[0]
+            yml_dl = daytona_tool.run_cmd(sandbox, f"cat {yml_path}", timeout=10)
+            yml_text = yml_dl["stdout"] or ""
+            translatable, untranslatable = _yml_to_pip_requirements(yml_text)
+            untranslatable_packages = untranslatable
+            total = len(translatable) + len(untranslatable)
+            completeness_score = (len(translatable) / total) if total > 0 else 0.0
+            _log(
+                f"env.yml {yml_path}: {len(translatable)} pip-translatable, "
+                f"{len(untranslatable)} untranslatable, completeness={completeness_score:.2f}"
+            )
+            if not translatable:
+                install_stdout_parts.append(
+                    f"=== {yml_path}: 0 pip-translatable, {len(untranslatable)} untranslatable ==="
+                )
+                install_success_overall = (len(untranslatable) == 0)
+            else:
+                # Install in a single command so pip can resolve the dep graph.
+                # Individual package failures are tolerated for env.yml because
+                # version pins are notoriously stale; we'll still record them.
+                pkg_args = " ".join(f"'{p}'" for p in translatable)
+                r = _run_install(
+                    f"{UV} pip install --python {VENV} {pkg_args}",
+                    f"pip install (env.yml-translated, {len(translatable)} pkgs)",
+                )
+                if not r["success"]:
+                    # Fall back: install one-at-a-time so a single bad pin doesn't
+                    # block the rest. This is the env.yml leniency rationale.
+                    _log("Bulk install failed — retrying one-at-a-time for partial success")
+                    for pkg in translatable:
+                        rr = _run_install(
+                            f"{UV} pip install --python {VENV} '{pkg}'",
+                            f"pip install {pkg}",
+                        )
+                        if not rr["success"]:
+                            dep_failures_yml.append(pkg)
+                # env.yml: success if at least half installed cleanly.
+                if dep_failures_yml:
+                    install_success_overall = (
+                        len(dep_failures_yml) <= len(translatable) // 2
+                    )
+                else:
+                    install_success_overall = r["success"]
+        elif installable_files:
+            strategies_used.append("pip_editable")
+            r = _run_install(
+                f"{UV} pip install --python {VENV} -e /home/daytona/repo",
+                "pip install -e .",
+            )
+            completeness_score = 1.0 if r["success"] else 0.5
+            install_success_overall = r["success"]
+        else:
+            strategies_used.append("none")
+            completeness_score = 0.0
+            install_stdout_parts.append(
+                "No environment file discovered (no requirements.txt, env.yml, "
+                "pyproject.toml, setup.py, setup.cfg, or Pipfile)."
+            )
+            install_success_overall = False
+
+        strategy_label = "+".join(strategies_used) if strategies_used else "none"
+        combined_stdout = "\n\n".join(install_stdout_parts)
+        combined_exit_code = (
+            max(install_exit_codes) if install_exit_codes
+            else (0 if strategy_label != "none" else 1)
         )
-        _log(f"pip install exit_code={req_check['exit_code']} success={req_check['success']}")
-        _log(f"pip stdout tail:\n{(req_check['stdout'] or '')[-1000:]}")
 
-        # Parse dependency failures from pip output
-        pip_out = req_check["stdout"] or ""
+        # Parse dep_failures lines from combined stdout (same heuristic as before)
         dep_failures: list[str] = []
-        for line in pip_out.splitlines():
+        for line in combined_stdout.splitlines():
             low = line.lower()
-            if any(kw in low for kw in ("error:", "could not", "no matching distribution", "failed building")):
+            if any(kw in low for kw in (
+                "error:", "could not", "no matching distribution", "failed building",
+            )):
                 dep_failures.append(line.strip())
-        if dep_failures:
-            _log(f"Dependency failures detected: {dep_failures}")
 
         # Build partial run_log (saved even on early return)
         run_log: dict[str, Any] = {
             "requirements_install": {
-                "exit_code": req_check["exit_code"],
-                "stdout": req_check["stdout"],
-                "success": req_check["success"],
+                "discovery": {
+                    "discovered_files": discovered_rel,
+                    "strategy": strategy_label,
+                    "completeness_score": round(completeness_score, 3),
+                    "untranslatable_packages": untranslatable_packages,
+                },
+                "exit_code": combined_exit_code,
+                "stdout": combined_stdout,
+                "success": install_success_overall,
+                "dep_failures": dep_failures_yml,
             },
             "diagnostics": {
                 "dep_failures": dep_failures,
@@ -742,7 +1124,11 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
             },
         }
 
-        if not req_check["success"] and "NO_REQUIREMENTS_FILE" not in pip_out:
+        # Hard-fail only when a pip_requirements install actually failed.
+        # For env_yml_translated and pip_editable we proceed to entry-point
+        # execution so the synthesizer can report what happened. For none, we
+        # still proceed so the report can explain the absence honestly.
+        if "pip_requirements" in strategy_label and not install_success_overall:
             output_files.append(log_path)
             save_json(run_log, log_path)
             _log("FAILED: pip install -r requirements.txt failed")
@@ -751,7 +1137,7 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
                 output_files,
                 "pip install -r requirements.txt failed",
                 0,
-                req_check["stdout"] or f"exit_code={req_check['exit_code']}",
+                combined_stdout[-2000:] or f"exit_code={combined_exit_code}",
             )
 
         # ── Diagnostic: data file check ───────────────────────────────────
@@ -944,6 +1330,20 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
             else:
                 _log("No extra notebook dependencies needed")
 
+        # ── Snapshot working tree BEFORE execution (fabricated-success input) ─
+        ls_before = daytona_tool.run_cmd(
+            sandbox,
+            "find /home/daytona/repo -maxdepth 4 -type f ! -path '*/.git/*' "
+            "2>/dev/null",
+            timeout=30,
+        )
+        files_before: set[str] = set(
+            f.strip().replace("/home/daytona/repo/", "", 1)
+            for f in (ls_before["stdout"] or "").splitlines()
+            if f.strip()
+        )
+        _log(f"Working tree snapshot (before execution): {len(files_before)} files")
+
         # ── Execute entry point ───────────────────────────────────────────
         if is_notebook:
             _log(f"Running notebook: {remote_main} via nbconvert (timeout=600s)...")
@@ -1002,11 +1402,28 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
 
         output_files.append(log_path)
 
-        # ── Download expected outputs ─────────────────────────────────────
+        # ── Classify expected outputs (Layer 2) ───────────────────────────
+        # Test 4 (Riboformer) tried to download "Fig 2b" as a file path. Only
+        # file_path entries are downloadable on-disk artifacts. paper_deliverable,
+        # geo_accession, url, unresolved are surfaced in the report verbatim
+        # but never attempted as downloads.
+        classified: dict[str, list[str]] = {
+            "file_path": [], "directory_path": [], "paper_deliverable": [],
+            "geo_accession": [], "url": [], "unresolved": [],
+        }
+        for rel in target.expected_outputs:
+            classified[_classify_expected_output(rel)].append((rel or "").strip())
+        run_log["expected_outputs_classified"] = classified
+        _log(
+            "Expected-output classification: "
+            + ", ".join(f"{k}={len(v)}" for k, v in classified.items() if v)
+        )
+
+        # ── Download expected outputs (file_path only) ────────────────────
         expected_found: list[str] = []
         expected_missing: list[str] = []
-        for rel in target.expected_outputs:
-            rel_clean = rel.strip().lstrip("/")
+        for rel in classified["file_path"]:
+            rel_clean = rel.lstrip("/")
             if not rel_clean:
                 continue
             remote_path = f"/home/daytona/repo/{rel_clean}"
@@ -1035,8 +1452,43 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
         run_log["expected_outputs_found"] = expected_found
         run_log["expected_outputs_missing"] = expected_missing
 
+        # ── Fabricated-success detector (Layer 2) ─────────────────────────
+        # Wet-lab analog: silent no-op when simulation passes but zero liquid
+        # handling. Dry-lab: clean exit but no on-disk artifacts produced.
+        ls_after = daytona_tool.run_cmd(
+            sandbox,
+            "find /home/daytona/repo -maxdepth 4 -type f ! -path '*/.git/*' "
+            "2>/dev/null",
+            timeout=30,
+        )
+        files_after: set[str] = set(
+            f.strip().replace("/home/daytona/repo/", "", 1)
+            for f in (ls_after["stdout"] or "").splitlines()
+            if f.strip()
+        )
+        fab_check = _check_dry_lab_fabricated_success(
+            run_log, files_before, files_after,
+        )
+        run_log["fabricated_success_check"] = fab_check
+        run_log["directory_outputs_populated"] = fab_check["directory_outputs_populated"]
+        if fab_check["fabricated"]:
+            _log(f"FABRICATED SUCCESS DETECTED: {fab_check['reason']}")
+            run_log["main_script"]["success"] = False
+            run_log["main_script"]["failure_reason"] = (
+                f"Fabricated success: {fab_check['reason']}"
+            )
+
         save_json(run_log, log_path)
         _log(f"Run log saved: {log_path}")
+
+        if fab_check["fabricated"]:
+            return _contract(
+                "error",
+                output_files,
+                "Fabricated success: clean exit but no scientific artifacts produced",
+                0,
+                fab_check["reason"] or "",
+            )
 
         if not main_run["success"]:
             _log("DRY LAB FAILED: main script exited non-zero")

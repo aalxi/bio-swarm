@@ -464,7 +464,15 @@ def _apply_fill(
     confidence: float,
     source_url: str | None,
 ) -> None:
-    """Mutate protocol_dict in place, applying value to the correct location."""
+    """Mutate protocol_dict in place. For per-step fields, write a
+    FieldLineage(source_type='enricher_fill') record to step['field_lineage'].
+
+    Phase is inferred: 'tavily' when source_url is provided (Phase 2 fill);
+    'notes_mining' when source_url is None (Phase 0 fill).
+    """
+    from datetime import datetime, UTC
+    from schemas.lineage_schema import EnricherFillDetail, FieldLineage
+
     if field in ("pipettes", "labware_setup"):
         if isinstance(value, list) and value:
             protocol_dict[field] = value
@@ -476,12 +484,20 @@ def _apply_fill(
     for step in protocol_dict.get("sequential_steps", []):
         if step.get("step_number") == step_number:
             step[field] = value
-            if "field_confidence" not in step or step["field_confidence"] is None:
-                step["field_confidence"] = {}
-            if "field_sources" not in step or step["field_sources"] is None:
-                step["field_sources"] = {}
-            step["field_confidence"][field] = confidence
-            step["field_sources"][field] = source_url
+            step.setdefault("field_lineage", {})
+            phase = "tavily" if source_url else "notes_mining"
+            lineage = FieldLineage(
+                value=value,
+                placed_at=datetime.now(UTC),
+                source_type="enricher_fill",
+                enricher_fill=EnricherFillDetail(
+                    phase=phase, confidence=float(confidence),
+                    tavily_url=source_url,
+                ),
+                citations=[],
+                iteration_index=None,
+            )
+            step["field_lineage"][field] = lineage.model_dump(mode="json")
             break
 
 
@@ -689,6 +705,9 @@ def enricher_agent(methodology_result: dict, task_id: str) -> dict[str, Any]:
                                 {},
                             )
                             step[field] = backup_step.get(field)
+                            # also drop the lineage record we just wrote
+                            if "field_lineage" in step and field in step["field_lineage"]:
+                                del step["field_lineage"][field]
                             break
                 else:
                     protocol_dict[field] = protocol_backup.get(field)
