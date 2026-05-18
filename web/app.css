@@ -418,3 +418,121 @@ body {
     color: var(--text-body) !important;
     padding: 0 !important;
 }
+
+/* ── Field Lineage panel ─────────────────────────────────────────────────── */
+
+#lineage-panel {
+    margin-top: 1rem;
+}
+
+#lineage-panel > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.lineage-summary {
+    margin: 0.5rem 0 1rem;
+    padding: 0.5rem;
+    background: var(--surface);
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.82rem;
+}
+
+.lineage-summary-row {
+    line-height: 1.6;
+    color: var(--text-body);
+}
+
+.lineage-field-block {
+    margin: 0.5rem 0;
+    padding: 0.5rem;
+    border-left: 3px solid var(--border);
+    background: var(--surface);
+}
+
+.lineage-field-block > summary {
+    cursor: pointer;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.82rem;
+    color: var(--text);
+    padding: 0.2rem 0;
+}
+
+.lineage-record {
+    padding: 0.4rem 0.6rem;
+    margin: 0.3rem 0;
+    border-left: 3px solid var(--border);
+    background: var(--surface-2);
+}
+
+.lineage-record.paper-span         { border-left-color: #6ec1e4; }
+.lineage-record.enricher-fill      { border-left-color: #d36ee4; }
+.lineage-record.oracle-reading     { border-left-color: #e4c66e; }
+.lineage-record.replanner-revision { border-left-color: #6ee48a; }
+
+.lineage-record-header {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    margin-bottom: 0.3rem;
+}
+
+.lineage-record-header .source-type {
+    font-weight: 600;
+    font-size: 0.8rem;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--text);
+}
+
+.lineage-record-header .iter-badge {
+    font-size: 0.75em;
+    padding: 0 0.4rem;
+    background: var(--btn-bg);
+    border-radius: 3px;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.lineage-field {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.78em;
+    color: var(--text-muted);
+}
+
+.lineage-rationale {
+    margin-top: 0.3rem;
+    font-style: italic;
+    font-size: 0.85em;
+    color: var(--text-dim);
+}
+
+.citation-row {
+    margin-top: 0.4rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    align-items: center;
+}
+
+.citation-label {
+    font-size: 0.78em;
+    color: var(--text-dim);
+    font-family: 'Inter', system-ui, sans-serif;
+}
+
+.citation-chip {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.75em;
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--btn-bg);
+    border-radius: 10px;
+    border: 1px solid transparent;
+    color: var(--text-body);
+}
+
+.citation-chip.vstatus-verified         { border-color: #6ee48a; }
+.citation-chip.vstatus-content_mismatch { border-color: #b86a5e; }
+.citation-chip.vstatus-unreachable      { border-color: #e4c66e; }
+.citation-chip.vstatus-unchecked        { border-color: var(--border); }
