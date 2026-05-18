@@ -7,7 +7,14 @@ Verification (`verify_at_startup`) is three-state: verified / content_mismatch
 """
 from __future__ import annotations
 
-from typing import Literal, Optional
+import json
+import os
+import re
+import time
+import unicodedata
+import urllib.request
+from pathlib import Path
+from typing import Literal, Literal as _Literal, Optional
 
 from pydantic import BaseModel
 
@@ -88,15 +95,6 @@ REGISTRY: dict[str, Citation] = {
 }
 
 
-import json
-import os
-import re
-import time
-import unicodedata
-import urllib.request
-from pathlib import Path
-from typing import Literal as _Literal
-
 _VerifyResult = _Literal["verified", "content_mismatch", "unreachable"]
 
 # Characters PMC HTML and rendered hyphenation insert that break naive ==
@@ -174,7 +172,7 @@ def verify_at_startup(timeout_s: float = 10.0) -> dict[str, _VerifyResult]:
         if status != "verified":
             print(f"[citations] {key}: {status} ({citation.url})", flush=True)
 
-    Path(os.path.dirname(_CACHE_PATH) or ".").mkdir(parents=True, exist_ok=True)
+    Path(_CACHE_PATH).parent.mkdir(parents=True, exist_ok=True)
     try:
         with open(_CACHE_PATH, "w") as f:
             json.dump(cache, f, indent=2)
