@@ -14,6 +14,7 @@
     extraction: "METHODOLOGY AGENT",
     enrichment: "PIE AGENT",
     coding:     "CODER AGENT",
+    iteration:  "ITERATION AGENT",
     synthesis:  "SYNTHESIZER AGENT",
     unknown:    "PIPELINE",
   };
@@ -22,7 +23,8 @@
     research:   "METHODOLOGY AGENT",
     extraction: null,    // depends on mode — handled inline
     enrichment: "CODER AGENT",
-    coding:     "SYNTHESIZER AGENT",
+    coding:     "ITERATION AGENT",
+    iteration:  "SYNTHESIZER AGENT",
   };
 
   // ── Mode toggle ───────────────────────────────────────────────────────────
@@ -211,6 +213,7 @@
       extraction: [["", `> [${ts}]  chunking research content and calling extractor...`]],
       enrichment: [["", `> [${ts}]  running gap analysis on extracted protocol...`]],
       coding:     [["", `> [${ts}]  generating code and spinning up Daytona sandbox...`]],
+      iteration:  [["", `> [${ts}]  oracle reading results and evaluating convergence...`]],
       synthesis:  [["", `> [${ts}]  reading workspace artifacts and state.json...`]],
     };
     return [
@@ -224,8 +227,152 @@
     extraction: buildExtractionLines,
     enrichment: buildEnrichmentLines,
     coding:     buildCodingLines,
+    iteration:  buildIterationLines,
     synthesis:  buildSynthesisLines,
   };
+
+  // ── Iteration phase support ──────────────────────────────────────────────
+  function buildIterationLines(ev) {
+    const ts = ev.ts;
+    const cq = ev.cq != null ? `cq=${ev.cq}` : "cq=none";
+    return [
+      ["dim",     `> [${ts}]  iter ${ev.iteration_index}: oracle evaluated convergence quality`],
+      ["",        `> [${ts}]  action=${ev.action || "unknown"}  ${cq}  regime=${ev.regime || "unknown"}`],
+      ["success", `> [${ts}]  status: SUCCESS`],
+    ];
+  }
+
+  // Track iteration outcomes for the lineage summary.
+  let currentIterationsState = { iterations_completed: 0 };
+
+  function trackIterationEvent(event) {
+    if (event.phase !== "iteration") return;
+    if (event.type === "phase_end") {
+      currentIterationsState.iterations_completed = event.iteration_index;
+      if (event.action === "converged") currentIterationsState.converged = true;
+      if (event.action === "diagnose_required") currentIterationsState.diagnosis_required = true;
+      if (event.action === "cap_reached") currentIterationsState.cap_reached = true;
+    }
+  }
+
+  // ── Field Lineage rendering ──────────────────────────────────────────────
+  const SOURCE_TYPE_COLORS = {
+    paper_span:          "paper-span",
+    enricher_fill:       "enricher-fill",
+    oracle_reading:      "oracle-reading",
+    replanner_revision:  "replanner-revision",
+  };
+
+  function elCreate(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function renderAggregate(taskId, fields, registry, iters) {
+    const target = document.getElementById("lineage-aggregate");
+    if (!target) return;
+    target.innerHTML = "";
+    const counts = { paper_span: 0, enricher_fill: 0, oracle_reading: 0, replanner_revision: 0 };
+    for (const head of Object.values(fields)) {
+      let cur = head;
+      while (cur) { counts[cur.source_type] = (counts[cur.source_type] || 0) + 1; cur = cur.parent; }
+    }
+    const summary = elCreate("div", "lineage-summary");
+    summary.appendChild(elCreate("div", "lineage-summary-row", `Task: ${taskId}`));
+    summary.appendChild(elCreate("div", "lineage-summary-row",
+      `Fields with lineage: ${Object.keys(fields).length}`));
+    summary.appendChild(elCreate("div", "lineage-summary-row",
+      `paper_span:${counts.paper_span} · enricher_fill:${counts.enricher_fill} · oracle_reading:${counts.oracle_reading} · replanner_revision:${counts.replanner_revision}`));
+    let outcome = "PENDING";
+    if (iters && iters.converged) outcome = "CONVERGED";
+    else if (iters && iters.diagnosis_required) outcome = "DIAGNOSE_REQUIRED";
+    else if (iters && iters.cap_reached) outcome = "CAP_REACHED";
+    summary.appendChild(elCreate("div", "lineage-summary-row",
+      `Iteration outcome: ${outcome} in ${(iters && iters.iterations_completed) || 0} iterations`));
+    target.appendChild(summary);
+  }
+
+  function renderCitationChip(key, registry) {
+    const chip = elCreate("span", "citation-chip");
+    chip.textContent = key;
+    const entry = registry && registry[key];
+    if (entry) {
+      chip.title = [
+        entry.full_text || "",
+        entry.quoted_text ? `"${entry.quoted_text}"` : "",
+        entry.url || "",
+      ].filter(Boolean).join("\n");
+      if (entry.url) {
+        chip.style.cursor = "pointer";
+        chip.addEventListener("click", () => window.open(entry.url, "_blank"));
+      }
+      const status = entry.verification_status || "unchecked";
+      chip.classList.add(`vstatus-${status}`);
+    }
+    return chip;
+  }
+
+  function renderRecord(fl, registry) {
+    const wrap = elCreate("div", `lineage-record ${SOURCE_TYPE_COLORS[fl.source_type] || ""}`);
+    const header = elCreate("div", "lineage-record-header");
+    header.appendChild(elCreate("span", "source-type", fl.source_type));
+    if (fl.iteration_index != null) {
+      header.appendChild(elCreate("span", "iter-badge", `iter ${fl.iteration_index}`));
+    }
+    wrap.appendChild(header);
+    wrap.appendChild(elCreate("div", "lineage-field", `value = ${JSON.stringify(fl.value)}`));
+    const detail = fl[fl.source_type];
+    if (detail) {
+      for (const [k, v] of Object.entries(detail)) {
+        if (v != null && k !== "rationale") {
+          wrap.appendChild(elCreate("div", "lineage-field", `${k} = ${v}`));
+        }
+      }
+      if (detail.rationale) {
+        wrap.appendChild(elCreate("div", "lineage-rationale", detail.rationale));
+      }
+    }
+    if (fl.citations && fl.citations.length) {
+      const c = elCreate("div", "citation-row");
+      c.appendChild(elCreate("span", "citation-label", "cites:"));
+      for (const k of fl.citations) c.appendChild(renderCitationChip(k, registry));
+      wrap.appendChild(c);
+    }
+    return wrap;
+  }
+
+  function renderChain(head, registry) {
+    const container = elCreate("div", "lineage-chain");
+    const chain = [];
+    let cur = head;
+    while (cur) { chain.push(cur); cur = cur.parent; }
+    chain.reverse();
+    for (const fl of chain) container.appendChild(renderRecord(fl, registry));
+    return container;
+  }
+
+  async function fetchAndRenderLineage(taskId, iters) {
+    try {
+      const r = await fetch(`/lineage/${taskId}`);
+      if (!r.ok) return;
+      const { fields, registry } = await r.json();
+      renderAggregate(taskId, fields, registry, iters);
+      const target = document.getElementById("lineage-content");
+      if (!target) return;
+      target.innerHTML = "";
+      for (const [path, head] of Object.entries(fields)) {
+        const block = elCreate("details", "lineage-field-block");
+        const sum = elCreate("summary", "", path);
+        block.appendChild(sum);
+        block.appendChild(renderChain(head, registry));
+        target.appendChild(block);
+      }
+    } catch (e) {
+      console.error("lineage fetch failed", e);
+    }
+  }
 
   // ── Pipeline run ──────────────────────────────────────────────────────────
   const form = document.getElementById("input-form");
@@ -243,6 +390,7 @@
     runBtn.textContent = "Running...";
     pipelineEl.innerHTML = "";
     resultEl.hidden = true;
+    currentIterationsState = { iterations_completed: 0 };
 
     let res;
     try {
@@ -271,6 +419,7 @@
     es.addEventListener("phase_start", (ev) => {
       const data = JSON.parse(ev.data);
       const phase = data.phase;
+      trackIterationEvent(data);
       const panel = renderPanel(phase, "running", buildRunningLines(phase));
       panels[phase] = panel;
       pipelineEl.appendChild(panel);
@@ -280,6 +429,7 @@
     es.addEventListener("phase_end", (ev) => {
       const data = JSON.parse(ev.data);
       const phase = data.phase;
+      trackIterationEvent(data);
       const ok = data.status === "success";
       const builder = PHASE_BUILDER[phase];
       const lines = ok && builder ? builder(data) : buildErrorLines(data);
@@ -303,6 +453,7 @@
       const { result } = JSON.parse(ev.data);
       if (result.status === "success") {
         await showResult(task_id, result);
+        fetchAndRenderLineage(task_id, currentIterationsState);
       } else {
         showFinalError(result);
       }
