@@ -1,24 +1,24 @@
 # BioSwarm
 
-Multi-agent system that bridges published biology research and physical or computational execution. Built on GPT-5.4 mini, Tavily, Daytona sandboxes, FastAPI, and a vanilla HTML/JS frontend.
+A multi-agent system that takes a published biology paper and turns it into something you can actually run, either physically (a validated Opentrons script simulated in a cloud sandbox) or computationally (find the repo, spin up its exact environment, try to reproduce the results, return a Reproducibility Score). Built on GPT-5.4 mini, Tavily, Daytona, FastAPI, and a vanilla HTML/JS frontend.
 
-## What it does
+## The problem
 
-Wet Lab Mode: paste a biology paper or protocol description. BioSwarm extracts the methodology, enriches missing critical fields from open-access sources, converts the result into a validated Opentrons Python script, and simulates it in a cloud sandbox.
+Biology has a reproducibility crisis. A 2016 Nature survey found over 70% of researchers couldn't reproduce others' experiments and over half couldn't reproduce their own, and the US spends roughly $28 billion a year on preclinical research that can't be replicated. LLM agents built to help often make this worse by fabricating real-looking citations and passing blobs of paper text around that lose signal at every hop. Here's how we tried to fix that from the architecture up.
 
-Dry Lab Mode: paste a computational biology paper. BioSwarm finds its code repository, spins up the exact environment in a Daytona sandbox, runs the entry point, and returns a Reproducibility Score (PASS, PARTIAL, FAIL).
+## What we did about it
 
-Closed-Loop Iteration (wet lab, opt-in): after simulation, a mocked qPCR instrument reads the result. A replanner decides whether to converge, revise the template amount, or exit with diagnose_required when the regime cannot be resolved by template adjustment alone. Every value in the system, whether from a paper span, a Tavily enrichment, an instrument reading, or a replanner revision, carries a typed FieldLineage chain that traces its full origin.
+Every value the system produces carries its full origin as a typed FieldLineage chain, so an incubation temperature means exactly where it came from in the paper, what filled it in if the paper didn't state it, what an instrument measured during execution, and what any later revision changed it to and why. The chain renders as a tree.
 
-## What's different
+The LLM can't fabricate citations. Every citation has to resolve to a registered entry whose quoted text is verified against the live source page at startup, and if the LLM keeps trying to cite a fake source the rationale text gets thrown out and replaced with a deterministic fallback rather than preserved with a hallucinated "per Schrader 2012" buried in it.
 
-Every value carries its history. A `template_amount_ng = 25.0` is not just a number, it's a chain: where it was first extracted from the paper, what PIE enriched it from, what the qPCR oracle measured, what the replanner revised it to and why. The chain links by parent pointer and renders as a tree. The type is `FieldLineage` in `schemas/lineage_schema.py`.
+The system is allowed to refuse to act. When a measurement is ambiguous in a way automation can't responsibly resolve, it exits cleanly and tells the user the next move is manual diagnosis, not another automated guess.
 
-The LLM cannot invent citations. Every citation in a lineage record is a registry key, not a URL. Every key must resolve to a seed entry in `tools/citation_registry.py` whose `quoted_text` is verified at startup against the live source page. A Pydantic validator rejects unregistered keys at write time. When the replanner LLM cites a fake key twice in a row, the rationale text gets replaced entirely with a deterministic fallback string. No preserved prose that might contain hallucinated inline references like "per Schrader 2012".
+No agent passes raw text to another agent. Every handoff is a typed Pydantic object or a filename pointing into the shared workspace, so context flows as paths and models, never as blobs.
 
-The replanner can refuse to act. When ambiguous Cq sits at mid-range template (5 to 50 ng), the rule emits diagnose_required with no new value and exits the loop. Template adjustment alone cannot resolve that regime, so the system says so instead of guessing. The user gets a clear signal that this needs a dilution series, not another iteration.
+## Closed-loop iteration
 
-No raw text between agents. Every handoff is either a Pydantic model or a filename pointing into workspace/. The Researcher saves raw scrape output to disk; the Methodology agent reads files and emits typed protocols; the Enricher mutates the protocol in place; the Iteration phase appends typed records onto lineage chains. Context never gets passed as a blob, only as a path or a model.
+You can optionally let the system iterate: after the script is generated and simulated, a (currently mocked) instrument reads the result and the system decides whether the protocol is good, needs an adjustment, or should be handed back because the issue isn't something automation should fix. Three cycles max. Every revision is preserved in the lineage chain so the final value is traceable to the instrument reading that motivated each step.
 
 ## Architecture
 
