@@ -7,12 +7,54 @@ the output, and saves it to workspace/extracted_protocols/.
 
 import json
 import re
+from datetime import datetime, UTC
 from openai import OpenAI
 from tools.file_tool import load_json, save_json
 from tools.token_tracker import track_call
 from tools.tavily_tool import search_web
 from schemas.opentrons_schema import OpentronsProtocol
 from schemas.dry_lab_schema import ReproducibilityTarget
+from schemas.lineage_schema import FieldLineage, PaperSpanDetail
+
+_TYPED_STEP_FIELDS = (
+    "volume_ul", "template_amount_ng", "temperature_celsius",
+    "duration_seconds", "speed_rpm", "source_location",
+    "destination_location",
+)
+
+
+def _attach_paper_span_lineage(proto: dict) -> None:
+    """For every typed step field with a non-null value, write a
+    FieldLineage(source_type='paper_span') record IF no lineage record
+    already exists for that field. This is best-effort lineage from the
+    extraction — `quoted_text` is derived from the per-step `notes` (or
+    the extraction_notes joined) since we don't yet track exact spans.
+    """
+    doc_url = proto.get("paper_source") or ""
+    fallback_quote = " ".join(proto.get("extraction_notes", []))[:500] or "(none)"
+
+    for step in proto.get("sequential_steps", []):
+        step.setdefault("field_lineage", {})
+        quote = step.get("notes") or fallback_quote
+        for field in _TYPED_STEP_FIELDS:
+            if step.get(field) is None:
+                continue
+            if field in step["field_lineage"]:
+                continue
+            fl = FieldLineage(
+                value=step[field],
+                placed_at=datetime.now(UTC),
+                source_type="paper_span",
+                paper_span=PaperSpanDetail(
+                    doc_url=doc_url or "(unknown)",
+                    span_id=f"step_{step.get('step_number')}_{field}",
+                    quoted_text=quote,
+                ),
+                citations=[],
+                iteration_index=None,
+            )
+            step["field_lineage"][field] = fl.model_dump(mode="json")
+
 
 _client = None
 
@@ -312,10 +354,13 @@ def methodology_agent(researcher_result: dict, task_id: str) -> dict:
         except Exception:
             pass  # Silent fail, keep validated as-is with null github_url
 
-    # Step 5: Save validated output
+    # Step 5: Attach paper_span lineage records then save validated output
+    protocol_dict = validated.model_dump()
+    if mode == "wet_lab":
+        _attach_paper_span_lineage(protocol_dict)
     protocol_path = f"workspace/extracted_protocols/protocol_{task_id}.json"
     try:
-        save_json(validated.model_dump(), protocol_path)
+        save_json(protocol_dict, protocol_path)
     except Exception as e:
         return {
             "status": "error",
