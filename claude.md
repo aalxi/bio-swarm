@@ -364,9 +364,10 @@ def run_pipeline(
 **Sequence**:
 1. Research (always)
 2. Extraction (always)
-3. **Enrichment (wet-lab only, non-blocking)** — if PIE errors, the supervisor logs `state.enrichment.skipped = True`, appends a warning to `state.errors`, and proceeds to Coder with the sparse protocol.
+3. **Enrichment (wet-lab only, non-blocking)** — if PIE errors, the supervisor logs `state.enrichment.skipped = True`.
 4. Coding (always)
-5. Synthesis (always)
+5. **Iteration (wet-lab only, gated on `state.iterations.enabled`)** — up to `MAX_ITERATIONS = 3` of `simulate_qpcr_well → results_reader → replanner → coder`. Loop exits on `converged` OR `diagnose_required`; `cap_reached` is set only after exhausting iterations without either.
+6. Synthesis (always)
 
 **Error handling**: on any non-success contract from a blocking step, the Supervisor marks `state.status = "error"`, appends `[phase] {message}: {error_detail}` to `state.errors`, prints the token summary, and returns the error dict. No clarifying questions, no user interaction — entry points (`server.py`, `run_cli.py`, legacy `main.py`) handle UX.
 
@@ -483,6 +484,14 @@ PAYWALL_DOMAINS          = ["nature.com", "science.org", "cell.com", ...]
 - Self-correction loop is mandatory — never return a first-attempt wet-lab failure without retrying.
 - Never install packages not in the paper's requirements file (dry lab) or not needed for the protocol (wet lab).
 - A clean simulation that performed no liquid handling is **not** a success — fail it explicitly.
+
+---
+
+### 5b. Results Reader (`agents/results_reader.py`)
+**Role**: Deterministic interpreter of `QPCRReading` outputs. No LLM call. Appends a `FieldLineage(source_type='oracle_reading')` record to the demo field's lineage chain and emits an `IterationOracleRecord` for `state.iterations.records`. The oracle measures; this reader interprets.
+
+### 5c. Replanner (`agents/replanner.py`)
+**Role**: Closes the loop. Heuristic `decide_action` picks one of `converged | reduce_template | increase_template | diagnose_required` (the last per L20 — ambiguous mid-range template cannot be resolved by template adjustment alone). LLM narrates the rationale, constrained to registry-keyed citations. On second citation-validation failure (L21), the rationale text is **replaced entirely** with a deterministic string — no preserved LLM prose. Appends a `FieldLineage(source_type='replanner_revision')` record to the field's chain.
 
 ---
 
@@ -687,6 +696,20 @@ Server-only synthetic events: `{"type": "done", "result": {...}}` and `{"type": 
 8. **Always return the Agent Return Contract dict.** The Supervisor depends on the structure.
 9. **Always clean up Daytona sandboxes.** Use `try/finally`. No leaked sandboxes.
 10. **Treat a clean-but-empty wet-lab simulation as a failure.** Use the liquid-handling regex check.
+
+---
+
+## Closed-loop iteration & field lineage
+
+A unified `FieldLineage` Pydantic model (see `schemas/lineage_schema.py`) replaces the older `field_confidence` / `field_sources` dicts. Every typed value on a `ProtocolStep` carries the full chain of records that produced it: `paper_span → enricher_fill → oracle_reading → replanner_revision`, linked by `parent`. Citations are **registry keys only** (`tools/citation_registry.py`); raw URLs in `FieldLineage.citations` are rejected by a Pydantic validator. Startup verification is three-state: `verified` / `content_mismatch` / `unreachable` (warn-and-flag per L16).
+
+The closed loop runs only when `state.iterations.enabled` is True. The CLI flag is `--enable-iteration`; the FastAPI query/body param is `enable_iteration=true`. The demo path is `--demo-paper rt-qpcr` which loads `workspace/demo_cache/rt_qpcr_protocol.json` and skips Research+Methodology.
+
+**Locked decisions of note** (from `docs/superpowers/2026-05-16-field-lineage-and-closed-loop-design.md`):
+- L8: Replanner is heuristic-decides + LLM-narrates; deterministic action is never re-derived by the LLM.
+- L20: Ambiguous Cq at mid-range template emits `diagnose_required` and exits the loop — the rule does not apologize for itself.
+- L21: On a second LLM citation-validation failure, rationale text is replaced entirely (no preserved LLM prose with hallucinated inline cites).
+- L24: Every `FieldLineage` has an auto-computed content-hash `id` and `parent_id` for flat lookup; the recursive `parent` link stays for tree rendering.
 
 ---
 
