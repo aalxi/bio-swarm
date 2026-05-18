@@ -43,14 +43,52 @@ class SynthesisState(BaseModel):
     failed_at_phase: Optional[str] = None
 
 
+class IterationOracleRecord(BaseModel):
+    iteration_index: int
+    code_file: str
+    sim_passed: bool
+    cq: Optional[float]
+    regime_label: Literal[
+        "clean", "inhibition_suspected", "low_copy_suspected", "no_amplification"
+    ]
+    raw_record_path: Optional[str]
+
+
+class IterationRevision(BaseModel):
+    iteration_index: int
+    action: Literal[
+        "converged", "reduce_template", "increase_template", "diagnose_required"
+    ]
+    field_changed: Optional[str] = None
+    new_value: Optional[float] = None
+    rationale: str
+    citation_keys: List[str] = []
+    citation_failure: bool = False
+
+
+class IterationsState(BaseModel):
+    done: bool = False
+    enabled: bool = False
+    iterations_completed: int = 0
+    converged: bool = False
+    cap_reached: bool = False
+    diagnosis_required: bool = False
+    records: List[IterationOracleRecord] = []
+    revisions: List[IterationRevision] = []
+
+
 class WorkspaceState(BaseModel):
     task_id: str
     mode: Literal["wet_lab", "dry_lab"]
     user_input: str
-    status: Literal["research", "extraction", "enrichment", "coding", "simulation", "synthesis", "complete", "error"]
+    status: Literal[
+        "research", "extraction", "enrichment", "coding", "iteration",
+        "simulation", "synthesis", "complete", "error"
+    ]
     research: ResearchState = ResearchState()
     extraction: ExtractionState = ExtractionState()
     enrichment: EnrichmentState = EnrichmentState()
     coding: CodingState = CodingState()
     synthesis: SynthesisState = SynthesisState()
+    iterations: IterationsState = IterationsState()
     errors: List[str] = []
