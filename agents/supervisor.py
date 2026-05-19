@@ -20,6 +20,11 @@ MAX_ITERATIONS = 3
 DEMO_FIELD_PATH = "step_1.template_amount_ng"
 
 
+def _demo_slug(name: str) -> str:
+    """Map a user-facing demo-paper name (e.g. 'rt-qpcr') to its on-disk slug."""
+    return name.strip().replace("-", "_")
+
+
 def _seed_for(task_id: str, iteration_index: int) -> int:
     """Stable 32-bit seed across processes (reviewer issue #8)."""
     digest = hashlib.md5(f"{task_id}:{iteration_index}".encode()).digest()
@@ -506,7 +511,7 @@ def run_pipeline_from_demo(
     _emit_start(status_callback, "coding")
     try:
         coder_result = coder_agent(
-            {"output_files": [protocol_path]}, mode, task_id,
+            {"status": "success", "output_files": [protocol_path]}, mode, task_id,
         )
     except Exception as e:
         coder_result = _exception_contract(e)

@@ -378,15 +378,18 @@
   const form = document.getElementById("input-form");
   const inputEl = document.getElementById("input");
   const runBtn = document.getElementById("run-btn");
+  const iterEl = document.getElementById("enable-iteration");
+  const demoBtn = document.getElementById("demo-btn");
   const pipelineEl = document.getElementById("pipeline");
   const resultEl = document.getElementById("result");
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = inputEl.value.trim();
-    if (!input) return;
+  function setRunControlsDisabled(disabled) {
+    runBtn.disabled = disabled;
+    if (demoBtn) demoBtn.disabled = disabled;
+  }
 
-    runBtn.disabled = true;
+  async function startRun(payload) {
+    setRunControlsDisabled(true);
     runBtn.textContent = "Running...";
     pipelineEl.innerHTML = "";
     resultEl.hidden = true;
@@ -397,18 +400,51 @@
       res = await fetch("/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input, mode }),
+        body: JSON.stringify(payload),
       });
     } catch (err) {
       showFatalError(`Network error contacting /run: ${err.message}`);
-      return;
+      return null;
     }
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       showFatalError(`Server returned ${res.status}: ${txt}`);
-      return;
+      return null;
     }
-    const { task_id } = await res.json();
+    return (await res.json()).task_id;
+  }
+
+  // Demo button: skips Research+Methodology and runs the closed loop on the
+  // committed RT-qPCR cache. Forces mode to wet_lab.
+  demoBtn.addEventListener("click", async () => {
+    mode = "wet_lab";
+    toggle.dataset.mode = "wet_lab";
+    toggle.querySelectorAll("button").forEach((b) => {
+      const on = b.dataset.mode === "wet_lab";
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    inputEl.value = "demo";
+    iterEl.checked = true;
+    const task_id = await startRun({
+      input: "demo", mode: "wet_lab",
+      enable_iteration: true, demo_paper: "rt-qpcr",
+    });
+    if (task_id) wireEventStream(task_id);
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = inputEl.value.trim();
+    if (!input) return;
+    const task_id = await startRun({
+      input, mode, enable_iteration: !!(iterEl && iterEl.checked),
+    });
+    if (!task_id) return;
+    wireEventStream(task_id);
+  });
+
+  function wireEventStream(task_id) {
     activeTaskId = task_id;
 
     const panels = {};  // phase -> element
@@ -448,7 +484,7 @@
 
     es.addEventListener("done", async (ev) => {
       es.close();
-      runBtn.disabled = false;
+      setRunControlsDisabled(false);
       runBtn.textContent = "Run BioSwarm";
       const { result } = JSON.parse(ev.data);
       if (result.status === "success") {
@@ -462,11 +498,11 @@
     es.addEventListener("error", () => {
       // EventSource auto-reconnects; only act if the connection is fully closed.
       if (es.readyState === EventSource.CLOSED) {
-        runBtn.disabled = false;
+        setRunControlsDisabled(false);
         runBtn.textContent = "Run BioSwarm";
       }
     });
-  });
+  }
 
   // ── Result display ────────────────────────────────────────────────────────
 
@@ -507,6 +543,7 @@
       dlScript.hidden = true;
     }
     dlReport.href = `/download/${taskId}?kind=report`;
+    dlReport.hidden = false;
 
     resultEl.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -525,7 +562,7 @@
   }
 
   function showFatalError(message) {
-    runBtn.disabled = false;
+    setRunControlsDisabled(false);
     runBtn.textContent = "Run BioSwarm";
     pipelineEl.innerHTML = "";
     const panel = renderPanel("unknown", "error", [

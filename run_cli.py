@@ -24,7 +24,14 @@ for d in [
 ]:
     os.makedirs(d, exist_ok=True)
 
-from agents.supervisor import run_pipeline
+from agents.supervisor import run_pipeline, _demo_slug
+
+# Best-effort citation-registry verification at boot (L16 warn-and-flag).
+try:
+    from tools.citation_registry import verify_at_startup as _verify_citations
+    _verify_citations(timeout_s=10.0)
+except Exception as _verify_err:
+    print(f"[cli] citation verify_at_startup failed: {_verify_err}", flush=True)
 
 
 def main():
@@ -74,7 +81,7 @@ def main():
     if args.demo_paper:
         from pathlib import Path
         import shutil as _sh
-        demo_slug = args.demo_paper.replace("-", "_")
+        demo_slug = _demo_slug(args.demo_paper)
         demo_src = Path(f"workspace/demo_cache/{demo_slug}_protocol.json")
         if not demo_src.exists():
             print(f"[cli] demo cache not found: {demo_src}", file=sys.stderr)

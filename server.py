@@ -15,10 +15,12 @@ import asyncio
 import json
 import os
 import queue
+import shutil
 import threading
 import traceback
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 # Make workspace/* relative paths resolve regardless of CWD
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -42,11 +44,19 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
-from agents.supervisor import run_pipeline
+from agents.supervisor import run_pipeline, run_pipeline_from_demo, _demo_slug
 from tools.file_tool import load_json
 
 
 app = FastAPI(title="BioSwarm")
+
+
+# Best-effort citation-registry verification at boot (L16 warn-and-flag).
+try:
+    from tools.citation_registry import verify_at_startup as _verify_citations
+    _verify_citations(timeout_s=10.0)
+except Exception as _verify_err:
+    print(f"[server] citation verify_at_startup failed: {_verify_err}", flush=True)
 
 # In-memory task registries. Single-tenant by design — see plan/CLAUDE.md.
 TASKS: dict[str, queue.Queue] = {}   # task_id -> event queue
@@ -64,12 +74,27 @@ async def start_run(payload: dict):
     user_input = (payload.get("input") or "").strip()
     mode = payload.get("mode")
     enable_iteration: bool = bool(payload.get("enable_iteration", False))
+    demo_paper = (payload.get("demo_paper") or "").strip() or None
     if not user_input:
         raise HTTPException(400, "Missing 'input'")
     if mode not in ("wet_lab", "dry_lab"):
         raise HTTPException(400, "'mode' must be 'wet_lab' or 'dry_lab'")
 
     task_id = str(uuid.uuid4())[:8]
+    protocol_path: str | None = None
+
+    # Stage a demo cache as the extracted protocol if requested. Done BEFORE
+    # registering TASKS[task_id] so a missing cache cleanly 400s without
+    # leaving an orphan event queue that /events would block on forever.
+    if demo_paper:
+        slug = _demo_slug(demo_paper)
+        src = Path(f"workspace/demo_cache/{slug}_protocol.json")
+        if not src.exists():
+            raise HTTPException(400, f"Demo cache not found for '{demo_paper}'")
+        dst = Path(f"workspace/extracted_protocols/protocol_{task_id}.json")
+        shutil.copy(src, dst)
+        protocol_path = str(dst)
+
     q: queue.Queue = queue.Queue()
     TASKS[task_id] = q
 
@@ -82,13 +107,23 @@ async def start_run(payload: dict):
 
     def runner():
         try:
-            result = run_pipeline(
-                user_input=user_input,
-                mode=mode,
-                task_id=task_id,
-                status_callback=callback,
-                enable_iteration=enable_iteration,
-            )
+            if demo_paper:
+                result = run_pipeline_from_demo(
+                    user_input=user_input,
+                    mode=mode,
+                    task_id=task_id,
+                    protocol_path=protocol_path,
+                    enable_iteration=enable_iteration,
+                    status_callback=callback,
+                )
+            else:
+                result = run_pipeline(
+                    user_input=user_input,
+                    mode=mode,
+                    task_id=task_id,
+                    status_callback=callback,
+                    enable_iteration=enable_iteration,
+                )
         except Exception as e:
             tb = traceback.format_exc()
             # Synthetic phase_end so no panel is left "running" forever.

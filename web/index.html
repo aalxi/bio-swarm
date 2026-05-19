@@ -34,6 +34,10 @@
                 required></textarea>
       <div class="run-row">
         <button type="submit" id="run-btn" class="pill-btn">Run BioSwarm</button>
+        <label class="iter-toggle">
+          <input type="checkbox" id="enable-iteration" /> Closed-loop iteration
+        </label>
+        <button type="button" id="demo-btn" class="pill-btn ghost">Run RT-qPCR demo</button>
       </div>
     </form>
 
@@ -58,7 +62,7 @@
 
       <div class="downloads">
         <a id="download-script" class="pill-btn" href="#" download hidden>Download Opentrons script</a>
-        <a id="download-report" class="pill-btn" href="#" download>Download reproducibility report</a>
+        <a id="download-report" class="pill-btn" href="#" download hidden>Download reproducibility report</a>
       </div>
     </section>
   </main>

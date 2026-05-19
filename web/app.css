@@ -159,7 +159,31 @@ body {
 .run-row {
     display: flex;
     justify-content: center;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
     margin-top: 18px;
+}
+
+.iter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted, #bbb);
+    font-size: 0.85rem;
+    font-family: 'Inter', system-ui, sans-serif;
+    user-select: none;
+    cursor: pointer;
+}
+.iter-toggle input { accent-color: var(--text, #e3e3e3); }
+
+.pill-btn.ghost {
+    background: transparent;
+    color: var(--text-muted, #bbb);
+}
+.pill-btn.ghost:hover {
+    background: var(--btn-bg-hover);
+    color: var(--text);
 }
 
 /* ── Pill button (Run, Download) ────────────────────────────────────────── */
