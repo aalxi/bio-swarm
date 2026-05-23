@@ -208,6 +208,84 @@ _URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 _FILE_RE = re.compile(r"^[\w./\- ]+\.[A-Za-z0-9]{1,8}$")
 
 
+# ── Torch-strip helpers (P1.5) ───────────────────────────────────────────────
+# Why: dry-lab sandboxes have ~5GB of disk. Full CUDA torch + nvidia wheels
+# total ~2GB and OOM the sandbox before the actual ML code runs. The previous
+# implementation only stripped torch from requirements*.txt; pyproject-based
+# repos (scGPT and most modern ML libs in 2026) slipped through.
+#
+# Approach: text-level rewrite — comment out any line whose first non-space
+# token matches the torch family. This is conservative across formats
+# (requirements.txt, pyproject TOML, setup.py list literal, setup.cfg, Pipfile)
+# and never deletes non-torch content. We intentionally do NOT round-trip
+# through tomllib/tomli_w because that would lose comments and formatting in
+# the user's repo files.
+
+_TORCH_FAMILY_RE = re.compile(
+    r"""
+    ^(?P<indent>\s*)                  # leading whitespace
+    (?P<quote>["']?)                  # optional quote (TOML/setup.py)
+    (?P<pkg>
+        torch                         # torch
+      | torchvision
+      | torchaudio
+      | torchdata
+      | torchtext
+      | triton
+      | nvidia[-_][A-Za-z0-9_-]+      # nvidia-cudnn, nvidia_cublas, …
+    )
+    \b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+_STRIPPED_COMMENT = "stripped-by-bioswarm: torch family removed for CPU-only sandbox (P1.5)"
+
+
+def _comment_prefix_for(filename: str) -> str:
+    """Pick the right comment syntax for the file's format."""
+    lower = filename.lower()
+    # TOML, ini-style setup.cfg, Python, requirements, YAML — all use '#'.
+    # Pipfile is TOML-ish; '#' is also valid.
+    return "#"
+
+
+def _strip_torch_from_env_file(text: str, filename: str) -> tuple[str, int]:
+    """Comment out torch-family lines in an env file's text. Pure-Python,
+    no parsing. Returns (new_text, n_lines_changed).
+
+    For setup.py we additionally match torch entries inside `install_requires`
+    list literals (quoted strings on their own line). The same line regex
+    catches them since the quote+pkg pattern is the same as requirements.txt.
+
+    Lines that are already commented out are left alone. Lines containing
+    torch as a *substring* of a non-torch name (e.g. `torchscope`) match
+    if and only if the word-boundary `\\b` after the pkg matches — which it
+    won't for `torchscope` since the next char is alphanumeric.
+    """
+    if not text:
+        return text, 0
+    prefix = _comment_prefix_for(filename)
+    out: list[str] = []
+    changed = 0
+    for line in text.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.startswith(("#", ";", "//")):
+            out.append(line)
+            continue
+        m = _TORCH_FAMILY_RE.match(line)
+        if not m:
+            out.append(line)
+            continue
+        # Comment the line out, preserving original indentation. Keep the
+        # original content after the prefix for human inspection.
+        indent = m.group("indent")
+        rest = line[len(indent):].rstrip("\n").rstrip("\r")
+        out.append(f"{indent}{prefix} {_STRIPPED_COMMENT}\n{indent}{prefix} {rest}\n")
+        changed += 1
+    return "".join(out), changed
+
+
 def _classify_expected_output(entry: str) -> str:
     """Returns one of: file_path, directory_path, paper_deliverable,
                        geo_accession, url, unresolved."""
@@ -299,10 +377,15 @@ WET_LAB_CODEGEN_SYSTEM_PROMPT = """\
 You are an Opentrons OT-2 protocol author. You receive a JSON protocol definition
 and must output a complete, runnable Opentrons Python protocol using API v2.
 
-You MUST respond with ONLY valid JSON containing exactly one key:
+You MUST respond with ONLY valid JSON containing exactly TWO keys:
 {
-  "script": "<full Python source as a single string, with \\n for newlines>"
+  "script": "<full Python source as a single string, with \\n for newlines>",
+  "labware_substitutions": [
+    {"original": "<name from protocol JSON>", "substituted": "<actual Opentrons name used>", "reason": "<one-line explanation>"}
+  ]
 }
+If no substitutions were made, return "labware_substitutions": [].
+Do NOT include protocol.comment() calls about substitutions — return them in the JSON key instead.
 
 Code requirements:
 - Use Opentrons API v2 with this exact structure (no decorators):
@@ -343,8 +426,15 @@ Code requirements:
 WET_LAB_FIX_SYSTEM_PROMPT = """\
 You are fixing an Opentrons OT-2 Python protocol that failed opentrons_simulate.
 
-Return ONLY valid JSON with exactly one key:
-{ "script": "<complete fixed Python source as a single string>" }
+Return ONLY valid JSON with exactly TWO keys:
+{
+  "script": "<complete fixed Python source as a single string>",
+  "labware_substitutions": [
+    {"original": "<name from protocol JSON>", "substituted": "<actual Opentrons name used>", "reason": "<one-line explanation>"}
+  ]
+}
+If no substitutions were made or the substitutions are unchanged from before, return "labware_substitutions": [].
+Do NOT include protocol.comment() calls about substitutions — return them in the JSON key instead.
 
 Requirements:
 - Use the standard API v2 structure: metadata = {"apiLevel": "2.13"}, def run(protocol): ...
@@ -381,6 +471,7 @@ def _contract(
     skipped_step_numbers: list[int] | None = None,
     coverage_method: str | None = None,
     fidelity_warning: bool = False,
+    labware_substitutions: list[dict] | None = None,
 ) -> dict[str, Any]:
     return {
         "status": status,
@@ -393,6 +484,7 @@ def _contract(
         "skipped_step_numbers": skipped_step_numbers if skipped_step_numbers is not None else [],
         "coverage_method": coverage_method,
         "fidelity_warning": fidelity_warning,
+        "labware_substitutions": labware_substitutions if labware_substitutions is not None else [],
     }
 
 
@@ -419,6 +511,45 @@ def _extract_script(data: dict[str, Any]) -> str:
     return script
 
 
+# Tokens that indicate a deep-well / high-volume labware name.
+# If one side of a substitution mentions these and the other doesn't,
+# the two labware have meaningfully different well volumes — flag it.
+# Note: 200ul is deliberately excluded — it is the standard PCR-plate volume
+# and appears on both shallow and deep-compatible names; it is not a reliable
+# signal of the deep-vs-shallow distinction that matters for physical safety.
+_VOLUME_SIGNIFICANT_TOKENS = re.compile(
+    r"_deep|2ml|2\.4ml|2_4ml|deep_well", re.IGNORECASE
+)
+
+
+def _extract_substitutions(data: dict[str, Any]) -> list[dict]:
+    """Parse labware_substitutions from LLM JSON, tag volume-significant pairs."""
+    raw = data.get("labware_substitutions")
+    if not isinstance(raw, list):
+        return []
+    result = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        orig = str(item.get("original", ""))
+        sub = str(item.get("substituted", ""))
+        reason = str(item.get("reason", ""))
+        # Skip tautological entries (same name on both sides)
+        if orig.strip().lower() == sub.strip().lower():
+            continue
+        orig_deep = _VOLUME_SIGNIFICANT_TOKENS.search(orig) is not None
+        sub_deep = _VOLUME_SIGNIFICANT_TOKENS.search(sub) is not None
+        # Volume-significant when one side is deep-well and the other isn't.
+        vol_sig = orig_deep != sub_deep
+        result.append({
+            "original": orig,
+            "substituted": sub,
+            "reason": reason,
+            "volume_significant": vol_sig,
+        })
+    return result
+
+
 # Opentrons pipette/protocol method calls that constitute actual liquid handling.
 # A generated script with ZERO of these is a silent no-op — simulation passes trivially.
 _LIQUID_HANDLING_RE = re.compile(
@@ -434,7 +565,7 @@ def _count_skipped_markers(script: str) -> int:
     return len(re.findall(r"#\s*SKIPPED\s*:", script))
 
 
-_STEP_MARKER_RE = re.compile(r"^#\s*STEP\s+(\d+)\b", re.MULTILINE)
+_STEP_MARKER_RE = re.compile(r"^\s*#\s*STEP\s+(\d+)\b", re.MULTILINE)
 
 
 def _compute_step_coverage(script: str, total_steps: int) -> tuple[float, list[int], str]:
@@ -477,13 +608,15 @@ def _compute_step_coverage(script: str, total_steps: int) -> tuple[float, list[i
     return ratio, skipped, "markers"
 
 
-def _generate_opentrons_script(protocol: dict[str, Any]) -> str:
+def _generate_opentrons_script(protocol: dict[str, Any]) -> tuple[str, list[dict]]:
+    """Return (script_str, labware_substitutions_list)."""
     user = json.dumps(protocol, indent=2)
     data = _llm_json(WET_LAB_CODEGEN_SYSTEM_PROMPT, user)
-    return _extract_script(data)
+    return _extract_script(data), _extract_substitutions(data)
 
 
-def _fix_opentrons_script(original_script: str, sim_stdout: str) -> str:
+def _fix_opentrons_script(original_script: str, sim_stdout: str) -> tuple[str, list[dict]]:
+    """Return (fixed_script_str, labware_substitutions_list)."""
     user = (
         "Simulation failed. Below is the error output from opentrons_simulate, "
         "then the full original script. Fix the script.\n\n"
@@ -491,7 +624,7 @@ def _fix_opentrons_script(original_script: str, sim_stdout: str) -> str:
         f"--- ORIGINAL SCRIPT ---\n{original_script}"
     )
     data = _llm_json(WET_LAB_FIX_SYSTEM_PROMPT, user)
-    return _extract_script(data)
+    return _extract_script(data), _extract_substitutions(data)
 
 
 def _wet_lab_flow(task_id: str) -> dict[str, Any]:
@@ -527,7 +660,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
         )
 
     try:
-        script = _generate_opentrons_script(raw_protocol)
+        script, labware_substitutions = _generate_opentrons_script(raw_protocol)
     except Exception as e:
         return _contract(
             "error",
@@ -539,6 +672,10 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
 
     out_path = f"workspace/generated_code/protocol_{task_id}.py"
     internal_retries = 0
+    # noop_retries tracks silent-no-op regen attempts (separate budget from sim-error retries).
+    # Capped at 2: a fresh _generate_opentrons_script call is cheap but not free.
+    noop_retries = 0
+    NOOP_MAX_RETRIES = 2
     last_sim_out = ""
     attempts_log: list[dict] = []
     total_steps = len(raw_protocol.get("sequential_steps") or [])
@@ -587,6 +724,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
             _log(f"opentrons_simulate exit_code={sim['exit_code']} success={sim['success']}")
             _log(f"simulate stdout:\n{last_sim_out[:2000]}")
 
+            # Always persist this attempt to disk before any branching.
             attempt_n = attempt + 1
             attempt_script_path = f"workspace/generated_code/protocol_{task_id}_attempt{attempt_n}.py"
             attempt_stderr_path = f"workspace/generated_code/protocol_{task_id}_attempt{attempt_n}.stderr"
@@ -616,11 +754,38 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                 low_coverage = coverage < LIQUID_COVERAGE_THRESHOLD
                 heuristic_used = coverage_method == "heuristic_fallback"
                 fidelity_warning = low_coverage or heuristic_used
+
                 if lh_calls == 0:
+                    # P1.3: silent no-op — simulation passed but script did no liquid handling.
+                    # Try a fresh generation (not a fix — there's no error trace to give the LLM).
+                    # Budget: up to NOOP_MAX_RETRIES regen attempts, each consuming one outer-loop slot.
+                    if noop_retries < NOOP_MAX_RETRIES and attempt < WET_LAB_MAX_SIM_ATTEMPTS - 1:
+                        noop_retries += 1
+                        _log(
+                            f"WARNING: simulation passed but script has no liquid-handling calls "
+                            f"(SKIPPED markers={skipped}). Regenerating (noop_retry "
+                            f"{noop_retries}/{NOOP_MAX_RETRIES})..."
+                        )
+                        try:
+                            script, labware_substitutions = _generate_opentrons_script(raw_protocol)
+                            _log("Fresh generation received, re-uploading...")
+                        except Exception as e:
+                            _log(f"Fresh regen failed: {e}")
+                            return _contract(
+                                "error",
+                                [],
+                                f"Fresh regen failed on noop_retry {noop_retries}",
+                                internal_retries,
+                                str(e),
+                                attempts=attempts_log,
+                            )
+                        # Continue to the next iteration of the outer loop (consumes one attempt slot).
+                        continue
+
                     save_text(script, out_path)
                     _log(
                         f"FAILED: simulation passed but script has no liquid-handling calls "
-                        f"(SKIPPED markers={skipped}). Treating as silent no-op."
+                        f"(SKIPPED markers={skipped}). Noop retries exhausted."
                     )
                     return _contract(
                         "error",
@@ -635,7 +800,9 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                         skipped_step_numbers=skipped_step_numbers,
                         coverage_method=coverage_method,
                         fidelity_warning=True,
+                        labware_substitutions=labware_substitutions,
                     )
+
                 save_text(script, out_path)
                 msg = (
                     f"Opentrons protocol simulated successfully after "
@@ -659,6 +826,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                     skipped_step_numbers=skipped_step_numbers,
                     coverage_method=coverage_method,
                     fidelity_warning=fidelity_warning,
+                    labware_substitutions=labware_substitutions,
                 )
 
             if attempt >= WET_LAB_MAX_SIM_ATTEMPTS - 1:
@@ -670,6 +838,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                     internal_retries,
                     last_sim_out,
                     attempts=attempts_log,
+                    labware_substitutions=labware_substitutions,
                 )
 
             internal_retries += 1
@@ -682,7 +851,10 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
             )
             _log(f"Requesting LLM fix (retry {internal_retries}/{WET_LAB_MAX_SIM_ATTEMPTS - 1})...")
             try:
-                script = _fix_opentrons_script(script, last_sim_out)
+                script, fix_subs = _fix_opentrons_script(script, last_sim_out)
+                # Last attempt's substitutions win; union them across attempts for completeness.
+                if fix_subs:
+                    labware_substitutions = fix_subs
                 logger.info(
                     "Wet lab fix attempt %s: requested revised full script from LLM",
                     internal_retries,
@@ -697,6 +869,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                     internal_retries,
                     str(e),
                     attempts=attempts_log,
+                    labware_substitutions=labware_substitutions,
                 )
 
         return _contract(
@@ -706,6 +879,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
             internal_retries,
             last_sim_out,
             attempts=attempts_log,
+            labware_substitutions=labware_substitutions,
         )
     finally:
         daytona_tool.cleanup(daytona, sandbox)
@@ -961,8 +1135,10 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
             )
             torch_probe = daytona_tool.run_cmd(sandbox, grep_cmd, timeout=10)
             torch_in_repo = bool((torch_probe["stdout"] or "").strip())
+        stripped_files: list[dict] = []
         if torch_in_repo:
             _log("torch/pytorch referenced in env files — stripping + CPU torch preinstall")
+            # Phase 1 — requirements*.txt (legacy sed path, fast, in-sandbox)
             for rf in req_txt_files:
                 daytona_tool.run_cmd(
                     sandbox,
@@ -970,6 +1146,31 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
                     f"torchvision|torchaudio|nvidia[-_])/d' {rf} 2>/dev/null || true",
                     timeout=10,
                 )
+                stripped_files.append({"path": rf, "method": "sed", "lines_changed": "unknown"})
+
+            # Phase 2 — pyproject.toml / setup.py / setup.cfg / Pipfile
+            # These need a real text rewrite; sed is brittle for nested list
+            # literals and TOML continuation lines. Download → rewrite → upload.
+            non_txt_targets = [
+                p for p in discovered_full
+                if os.path.basename(p).lower() in (
+                    "pyproject.toml", "setup.py", "setup.cfg", "pipfile",
+                )
+            ]
+            for path in non_txt_targets:
+                cat = daytona_tool.run_cmd(
+                    sandbox, f"cat {path}", timeout=15,
+                )
+                if not cat.get("success"):
+                    _log(f"  Could not read {path} for torch-strip: skipping")
+                    continue
+                original = cat.get("stdout") or ""
+                new_text, n = _strip_torch_from_env_file(original, path)
+                if n > 0:
+                    daytona_tool.upload_file(sandbox, new_text, path)
+                    _log(f"  Stripped torch from {os.path.basename(path)}: {n} line(s)")
+                stripped_files.append({"path": path, "method": "python-rewrite", "lines_changed": n})
+
             cpu_torch = daytona_tool.run_cmd(
                 sandbox,
                 f"{UV} pip install --python {VENV} "
@@ -978,7 +1179,38 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
             )
             _log(f"cpu torch install exit_code={cpu_torch['exit_code']} success={cpu_torch['success']}")
             if not cpu_torch["success"]:
-                _log("WARNING: CPU torch preinstall failed — proceeding anyway")
+                # Refuse to proceed — a non-CPU install would re-resolve full
+                # CUDA torch + nvidia-* and exhaust sandbox disk. Better to
+                # fail loudly here than 30s later with a confusing OOM trace.
+                tail = (cpu_torch.get("stdout") or "")[-2000:]
+                _log("FAILED: CPU-only torch preinstall failed; refusing to proceed")
+                return _contract(
+                    "error",
+                    [],
+                    "CPU-only torch preinstall failed; refusing to proceed because "
+                    "full CUDA install would exhaust sandbox disk",
+                    0,
+                    f"cpu_torch_exit_code={cpu_torch['exit_code']}\n--- stdout tail ---\n{tail}",
+                )
+
+            # Verify the venv actually has the +cpu build, not a re-resolved
+            # CUDA build pulled in by a transitive dep.
+            verify = daytona_tool.run_cmd(
+                sandbox,
+                f"{VENV}/bin/python -c \"import torch; print(torch.__version__)\"",
+                timeout=30,
+            )
+            verify_out = (verify.get("stdout") or "").strip()
+            _log(f"torch verify: {verify_out!r}")
+            if not verify.get("success") or "+cpu" not in verify_out:
+                return _contract(
+                    "error",
+                    [],
+                    "Installed torch is not a CPU-only build; refusing to proceed",
+                    0,
+                    f"torch version reported: {verify_out!r} "
+                    f"(exit={verify.get('exit_code')}). Expected suffix '+cpu'.",
+                )
 
         # ── Strategy dispatch ────────────────────────────────────────────
         install_stdout_parts: list[str] = []
@@ -1108,6 +1340,7 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
                     "strategy": strategy_label,
                     "completeness_score": round(completeness_score, 3),
                     "untranslatable_packages": untranslatable_packages,
+                    "torch_stripped_files": stripped_files if torch_in_repo else [],
                 },
                 "exit_code": combined_exit_code,
                 "stdout": combined_stdout,

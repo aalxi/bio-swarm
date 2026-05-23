@@ -33,6 +33,7 @@ class CodingState(BaseModel):
     fidelity_warning: bool = False
     skipped_step_numbers: List[int] = []
     coverage_method: Optional[Literal["markers", "heuristic_fallback"]] = None
+    labware_substitutions: List[dict] = []  # [{"original": str, "substituted": str, "reason": str, "volume_significant": bool}]
 
 
 class SynthesisState(BaseModel):
