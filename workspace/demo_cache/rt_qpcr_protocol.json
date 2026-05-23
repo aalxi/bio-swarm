@@ -18,13 +18,123 @@
       "volume_ul": 2.0, "template_amount_ng": 100.0,
       "source_location": "A1", "destination_location": "B1",
       "notes": "Add 100 ng template per well. Crude lysate; matrix-specific inhibition risk per Schrader 2012.",
-      "field_lineage": {}
+      "field_lineage": {
+        "template_amount_ng": {
+          "value": 100.0,
+          "placed_at": "2026-05-22T00:00:00+00:00",
+          "source_type": "paper_span",
+          "paper_span": {
+            "doc_url": "demo://rt_qpcr_v1",
+            "span_id": "step_1_template_amount_ng",
+            "quoted_text": "Add 100 ng template per well. Crude lysate; matrix-specific inhibition risk per Schrader 2012."
+          },
+          "enricher_fill": null,
+          "oracle_reading": null,
+          "replanner_revision": null,
+          "citations": ["PCR_inhibition_matrix_specific_schrader_2012"],
+          "iteration_index": null,
+          "parent": null,
+          "id": null,
+          "parent_id": null
+        },
+        "volume_ul": {
+          "value": 2.0,
+          "placed_at": "2026-05-22T00:00:00+00:00",
+          "source_type": "paper_span",
+          "paper_span": {
+            "doc_url": "demo://rt_qpcr_v1",
+            "span_id": "step_1_volume_ul",
+            "quoted_text": "2.0 µL crude lysate per well"
+          },
+          "enricher_fill": null,
+          "oracle_reading": null,
+          "replanner_revision": null,
+          "citations": [],
+          "iteration_index": null,
+          "parent": null,
+          "id": null,
+          "parent_id": null
+        },
+        "source_location": {
+          "value": "A1",
+          "placed_at": "2026-05-22T00:00:00+00:00",
+          "source_type": "paper_span",
+          "paper_span": {
+            "doc_url": "demo://rt_qpcr_v1",
+            "span_id": "step_1_source_location",
+            "quoted_text": "Transfer from source plate well A1 to PCR plate well B1"
+          },
+          "enricher_fill": null,
+          "oracle_reading": null,
+          "replanner_revision": null,
+          "citations": [],
+          "iteration_index": null,
+          "parent": null,
+          "id": null,
+          "parent_id": null
+        },
+        "destination_location": {
+          "value": "B1",
+          "placed_at": "2026-05-22T00:00:00+00:00",
+          "source_type": "paper_span",
+          "paper_span": {
+            "doc_url": "demo://rt_qpcr_v1",
+            "span_id": "step_1_destination_location",
+            "quoted_text": "Transfer from source plate well A1 to PCR plate well B1"
+          },
+          "enricher_fill": null,
+          "oracle_reading": null,
+          "replanner_revision": null,
+          "citations": [],
+          "iteration_index": null,
+          "parent": null,
+          "id": null,
+          "parent_id": null
+        }
+      }
     },
     {
       "step_number": 2, "action": "incubate",
       "temperature_celsius": 95.0, "duration_seconds": 600,
       "notes": "Initial denaturation",
-      "field_lineage": {}
+      "field_lineage": {
+        "temperature_celsius": {
+          "value": 95.0,
+          "placed_at": "2026-05-22T00:00:00+00:00",
+          "source_type": "paper_span",
+          "paper_span": {
+            "doc_url": "demo://rt_qpcr_v1",
+            "span_id": "step_2_temperature_celsius",
+            "quoted_text": "Initial denaturation at 95 °C for 10 minutes"
+          },
+          "enricher_fill": null,
+          "oracle_reading": null,
+          "replanner_revision": null,
+          "citations": [],
+          "iteration_index": null,
+          "parent": null,
+          "id": null,
+          "parent_id": null
+        },
+        "duration_seconds": {
+          "value": 600,
+          "placed_at": "2026-05-22T00:00:00+00:00",
+          "source_type": "paper_span",
+          "paper_span": {
+            "doc_url": "demo://rt_qpcr_v1",
+            "span_id": "step_2_duration_seconds",
+            "quoted_text": "Initial denaturation at 95 °C for 10 minutes"
+          },
+          "enricher_fill": null,
+          "oracle_reading": null,
+          "replanner_revision": null,
+          "citations": [],
+          "iteration_index": null,
+          "parent": null,
+          "id": null,
+          "parent_id": null
+        }
+      }
     }
   ],
   "extraction_notes": [
