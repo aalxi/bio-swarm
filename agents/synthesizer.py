@@ -63,6 +63,7 @@ After the verdict line, the Markdown report MUST include these sections IN THIS 
 1. ## Fidelity warnings — A bulleted list of every concern, in this priority order. EMIT THE HEADING EVEN IF EMPTY (write `_No fidelity concerns detected._` as the only body in that case — never omit the section).
    - If `coding.fidelity_warning` is true and `coding.liquid_step_coverage` is below 0.5: write a bullet like "Only {n}/{total} steps emitted liquid-handling calls; skipped step numbers: {list}". Compute n = round(coverage × total) where total is the number of `sequential_steps` from the protocol JSON.
    - If `coding.coverage_method == "heuristic_fallback"`: write a bullet starting with "Coverage estimated from heuristic — LLM did not emit `# STEP N` markers; metric is approximate."
+   - For every entry in `coding.labware_substitutions` (if present and non-empty): write one bullet per substitution in this format: "Labware substituted: `{original}` → `{substituted}` ({reason})". If `volume_significant` is true for that entry, prefix the bullet with "⚠ VOLUME-SIGNIFICANT — " to alert the reader that the two labware have meaningfully different well volumes (e.g. 200 µL vs 2+ mL).
    - For every entry in the PIE `enrichment_log.conflicts` (if present): write one bullet describing the conflict (field, step, candidate values, why it was reverted).
    - For every entry in the PIE `enrichment_log.still_null` (if present): write one bullet ("step{N}.{field}: still null — {reason}"). These are INFORMATION, not verdict-modifiers.
    - If the generated script contains `# SKIPPED:` comments: write one bullet ("{count} step fields were skipped during code generation").
@@ -202,6 +203,7 @@ def _collect_generated_code_artifacts(
                     "skipped_step_numbers": coding.get("skipped_step_numbers"),
                     "coverage_method": coding.get("coverage_method"),
                     "attempts_count": len(coding.get("attempts") or []),
+                    "labware_substitutions": coding.get("labware_substitutions") or [],
                 },
                 indent=2,
             )
@@ -484,7 +486,13 @@ def synthesizer_agent(task_id: str) -> dict[str, Any]:
 def _render_field_lineage_section(task_id: str) -> str:
     """Return a markdown 'Field Lineage Summary' section. Reads
     workspace/extracted_protocols/protocol_{task_id}.json and
-    workspace/state.json. Safe to call even when no iterations ran."""
+    workspace/state.json.
+
+    Renders whenever ANY step has a non-empty field_lineage dict, not only
+    when iterations ran. The iteration-outcome block is gated on whether
+    iterations were actually enabled, so non-iteration runs don't show a
+    confusing 'PENDING in 0 iterations' line.
+    """
     from tools.file_tool import load_json
     try:
         proto = load_json(f"workspace/extracted_protocols/protocol_{task_id}.json")
@@ -495,38 +503,55 @@ def _render_field_lineage_section(task_id: str) -> str:
     except Exception:
         state = {}
 
-    iters = state.get("iterations") or {}
-    if not iters.get("enabled"):
+    # New gate: render whenever any step has lineage data (P1.2).
+    # Previously gated on iters["enabled"], which hid lineage on real-paper runs.
+    steps = proto.get("sequential_steps") or []
+    has_lineage = any(step.get("field_lineage") for step in steps)
+    if not has_lineage:
         return ""
+
+    iters = state.get("iterations") or {}
 
     lines: list[str] = []
     lines.append("## Field Lineage Summary")
     lines.append("")
-    outcome = (
-        "CONVERGED" if iters.get("converged")
-        else "DIAGNOSE_REQUIRED" if iters.get("diagnosis_required")
-        else "CAP_REACHED" if iters.get("cap_reached")
-        else "PENDING"
-    )
-    lines.append(
-        f"- Iteration outcome: **{outcome}** in "
-        f"{iters.get('iterations_completed', 0)} iterations"
-    )
 
-    counts = {"paper_span": 0, "enricher_fill": 0,
-              "oracle_reading": 0, "replanner_revision": 0}
+    # Iteration-outcome block: only when iterations were enabled for this run.
+    if iters.get("enabled"):
+        outcome = (
+            "CONVERGED" if iters.get("converged")
+            else "DIAGNOSE_REQUIRED" if iters.get("diagnosis_required")
+            else "CAP_REACHED" if iters.get("cap_reached")
+            else "PENDING"
+        )
+        lines.append(
+            f"- Iteration outcome: **{outcome}** in "
+            f"{iters.get('iterations_completed', 0)} iterations"
+        )
+
+    counts: dict[str, int] = {"paper_span": 0, "enricher_fill": 0,
+                               "oracle_reading": 0, "replanner_revision": 0}
     field_blocks: list[str] = []
-    for step in proto.get("sequential_steps", []):
+    for step in steps:
         for field, head in (step.get("field_lineage") or {}).items():
             path = f"step_{step['step_number']}.{field}"
             cur = head
             chain = []
             while cur is not None:
                 chain.append(cur)
-                counts[cur.get("source_type", "")] = counts.get(cur.get("source_type", ""), 0) + 1
+                src = cur.get("source_type", "")
+                counts[src] = counts.get(src, 0) + 1
                 cur = cur.get("parent")
             chain.reverse()
-            if any(c.get("source_type") in ("oracle_reading", "replanner_revision") for c in chain):
+
+            # Render field block for any chain that contains oracle/replanner nodes
+            # (iteration runs), OR for any non-empty chain (non-iteration runs that
+            # have paper_span or enricher_fill lineage).
+            has_iter_nodes = any(
+                c.get("source_type") in ("oracle_reading", "replanner_revision")
+                for c in chain
+            )
+            if has_iter_nodes or chain:
                 block = [f"### {path}"]
                 for c in chain:
                     iter_tag = (
@@ -549,10 +574,10 @@ def _render_field_lineage_section(task_id: str) -> str:
 
     lines.append(
         f"- Source-type counts across all fields: "
-        f"paper_span={counts['paper_span']}, "
-        f"enricher_fill={counts['enricher_fill']}, "
-        f"oracle_reading={counts['oracle_reading']}, "
-        f"replanner_revision={counts['replanner_revision']}"
+        f"paper_span={counts.get('paper_span', 0)}, "
+        f"enricher_fill={counts.get('enricher_fill', 0)}, "
+        f"oracle_reading={counts.get('oracle_reading', 0)}, "
+        f"replanner_revision={counts.get('replanner_revision', 0)}"
     )
     if field_blocks:
         lines.append("")

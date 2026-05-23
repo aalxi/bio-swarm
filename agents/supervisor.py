@@ -162,11 +162,7 @@ def run_pipeline(
 
     # Copy coder-side observability fields into state regardless of outcome —
     # so error paths still surface attempts/coverage in the report.
-    state.coding.attempts = coder_result.get("attempts", []) or []
-    state.coding.liquid_step_coverage = coder_result.get("liquid_step_coverage")
-    state.coding.skipped_step_numbers = coder_result.get("skipped_step_numbers", []) or []
-    state.coding.coverage_method = coder_result.get("coverage_method")
-    state.coding.fidelity_warning = bool(coder_result.get("fidelity_warning", False))
+    _apply_coder_result_to_state(state, coder_result)
 
     if coder_result.get("status") != "success":
         state.coding.error_log = coder_result.get("error_detail")
@@ -269,6 +265,22 @@ def _emit_end(callback, phase: str, result: dict) -> None:
         if k in result:
             event[k] = result[k]
     _notify(callback, event)
+
+
+def _apply_coder_result_to_state(state: WorkspaceState, coder_result: dict) -> None:
+    """Copy coder-side observability fields from the contract into state.coding.
+
+    Called from BOTH run_pipeline and run_pipeline_from_demo so neither path
+    silently drops fidelity signal. This is observability-only — success-path
+    bookkeeping (done, script_file, simulation_passed, status) is handled by
+    the caller after checking coder_result['status'].
+    """
+    state.coding.attempts = coder_result.get("attempts", []) or []
+    state.coding.liquid_step_coverage = coder_result.get("liquid_step_coverage")
+    state.coding.skipped_step_numbers = coder_result.get("skipped_step_numbers", []) or []
+    state.coding.coverage_method = coder_result.get("coverage_method")
+    state.coding.fidelity_warning = bool(coder_result.get("fidelity_warning", False))
+    state.coding.labware_substitutions = coder_result.get("labware_substitutions", []) or []
 
 
 def _exception_contract(exc: Exception) -> dict:
@@ -516,6 +528,9 @@ def run_pipeline_from_demo(
     except Exception as e:
         coder_result = _exception_contract(e)
     _emit_end(status_callback, "coding", coder_result)
+    # Mirror all observability fields into state regardless of outcome —
+    # identical to run_pipeline so the demo path doesn't drop fidelity signal.
+    _apply_coder_result_to_state(state, coder_result)
     if coder_result.get("status") != "success":
         return _handle_error(state, "coding", coder_result, status_callback)
     out_files = coder_result.get("output_files", [])
