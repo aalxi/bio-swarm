@@ -13,7 +13,7 @@ from tools.file_tool import load_json, save_json
 from tools.token_tracker import track_call
 from tools.tavily_tool import search_web
 from schemas.opentrons_schema import OpentronsProtocol
-from schemas.dry_lab_schema import ReproducibilityTarget
+from schemas.dry_lab_schema import ReproducibilityTarget, _filter_placeholder_urls
 from schemas.lineage_schema import FieldLineage, PaperSpanDetail
 
 _TYPED_STEP_FIELDS = (
@@ -341,6 +341,22 @@ def methodology_agent(researcher_result: dict, task_id: str) -> dict:
                     f"Second attempt error: {second_error}"
                 ),
             }
+
+    # Step 4a: For dry lab mode, surface rejected placeholder URLs in extraction_notes
+    if mode == "dry_lab":
+        raw_download_urls = extracted.get("data_download_urls", []) if isinstance(extracted, dict) else []
+        if raw_download_urls:
+            _, rejected = _filter_placeholder_urls([str(u) for u in raw_download_urls])
+            if rejected:
+                note = (
+                    f"Methodology rejected {len(rejected)} placeholder URL(s) from "
+                    f"data_download_urls: {rejected}. "
+                    f"Reason: contained '??' or other placeholder marker."
+                )
+                # Append to validated model's extraction_notes
+                data_with_note = validated.model_dump()
+                data_with_note.setdefault("extraction_notes", []).append(note)
+                validated = ReproducibilityTarget.model_validate(data_with_note)
 
     # Step 4b: For dry lab mode, try to find missing GitHub URL
     if mode == "dry_lab" and not validated.github_url:
