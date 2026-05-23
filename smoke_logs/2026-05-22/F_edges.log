@@ -1,0 +1,106 @@
+===== F1: invalid demo-paper name =====
+[cli] demo cache not found: workspace/demo_cache/foobar_protocol.json
+[cli] task_id=315c551e  mode=wet_lab
+[cli] input: demo
+
+EXIT=0
+
+===== F2: trace nonexistent field (no iteration, demo) =====
+
+[coder 15:38:59 +6.8s] FAILED: simulation passed but script has no liquid-handling calls (SKIPPED markers=2). Treating as silent no-op.
+[cli] coding: error — Generated protocol has no liquid-handling steps — all steps were skipped due to missing volumes/targets
+[cli] synthesis: starting
+[cli] synthesis: success — Final Markdown report saved to workspace/final_reports/report_3b2ea369.md
+
+================================================================
+TOKEN USAGE SUMMARY
+================================================================
+Agent                 Calls     Prompt Completion      Total
+----------------------------------------------------------------
+coder                     1      1,031        290      1,321
+synthesizer               1      2,175        717      2,892
+----------------------------------------------------------------
+TOTAL                     2      3,206      1,007      4,213
+================================================================
+
+
+[cli] pipeline finished — status: error
+[cli] report: workspace/final_reports/report_3b2ea369.md
+[cli] errors:
+  - [coding] Generated protocol has no liquid-handling steps — all steps were skipped due to missing volumes/targets: liquid_handling_calls=0, skipped_markers=2. Simulation stdout:
+/home/daytona/.opentrons/robot_settings.json not found. Loading defaults
+Deck calibration not found.
+/home/daytona/.opentrons/deck_calibration.json not found. Loading defaults
+Initial denaturation
+Incubate at 95.0 C for 600 seconds (simulation note only; no thermocycler control in this protocol).
+Delaying for 10 minutes and 0.0 seconds
+
+[cli] exit_code=1
+EXIT=0
+
+===== F3: empty input =====
+synthesizer               1     67,726      1,576     69,302
+----------------------------------------------------------------
+TOTAL                    13    114,512      4,323    118,835
+================================================================
+
+
+[cli] pipeline finished — status: error
+[cli] report: workspace/final_reports/report_ab77c8b0.md
+[cli] errors:
+  - [coding] Generated protocol has no liquid-handling steps — all steps were skipped due to missing volumes/targets: liquid_handling_calls=0, skipped_markers=0. Simulation stdout:
+/home/daytona/.opentrons/robot_settings.json not found. Loading defaults
+Deck calibration not found.
+/home/daytona/.opentrons/deck_calibration.json not found. Loading defaults
+Ancient Dental Calculus Sample Decontamination and Crushing
+Source procedure is manual; this script documents timing and handling as comments where automation is not possible.
+SKIPPED: UV exposure is not automatable on the OT-2; expose sample to UV radiation for 15 min on each side in the sterile plastic dish.
+Delaying for 15 minutes and 0.0 seconds
+SKIPPED: Manual chemical incubation in 5% bleach on the sterile plastic dish; hold for 300 seconds.
+Delaying for 5 minutes and 0.0 seconds
+SKIPPED: Manual rinse/purify in purified water on the sterile plastic dish; hold for 300 seconds.
+Delaying for 5 minutes and 0.0 seconds
+SKIPPED: Manual ethanol immersion in 90% ethanol on the sterile plastic dish; hold for 180 seconds.
+Delaying for 3 minutes and 0.0 seconds
+SKIPPED: Air-dry sample within the sterile plastic container for 300 seconds.
+Delaying for 5 minutes and 0.0 seconds
+SKIPPED: Transfer of the air-dried sample to the sterile plastic bag is manual and no volume is provided.
+SKIPPED: Crushing calculus with a steel hammer inside the plastic bag is a manual physical step.
+SKIPPED: Transfer from the sterile plastic bag into the 2 mL screw cap tube is manual and no volume is provided.
+
+[cli] exit_code=1
+EXIT=0
+
+===== F4: --trace-field without iteration on demo path =====
+[cli] synthesis: starting
+[cli] synthesis: success — Final Markdown report saved to workspace/final_reports/report_7b258aa9.md
+
+================================================================
+TOKEN USAGE SUMMARY
+================================================================
+Agent                 Calls     Prompt Completion      Total
+----------------------------------------------------------------
+coder                     1      1,031        290      1,321
+synthesizer               1      1,978        607      2,585
+----------------------------------------------------------------
+TOTAL                     2      3,009        897      3,906
+================================================================
+
+
+[cli] pipeline finished — status: success
+[cli] report: workspace/final_reports/report_7b258aa9.md
+[cli] exit_code=0
+
+╭──── Lineage Summary · task 7b258aa9 ──────────────────────────────╮
+│  Fields with lineage: 0
+│    • paper_span:             0 records  (cyan)
+│    • enricher_fill (PIE):    0 records  (magenta)
+│    • oracle_reading:         0 records  (yellow)
+│    • replanner_revision:     0 records  (green)
+│  Citation health: 6 verified · 0 content_mismatch · 0 unreachable
+│  Iteration outcome: PENDING in 0 iterations
+╰──────────────────────────────────────────────────────────────────────╯
+
+[cli] field not found: step_1.template_amount_ng
+EXIT=0
+
