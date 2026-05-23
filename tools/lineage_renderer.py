@@ -68,7 +68,7 @@ def _format_record(fl: FieldLineage, color: bool, registry) -> list[str]:
         lines.append(f"  rule_id   = {r.rule_id}")
         if r.citation_failure:
             lines.append(_c("  citation_failure: yes", "fail", color))
-        lines.append(f"  rationale = {r.rationale[:160]}")
+        lines.append(f"  rationale = {_truncate_rationale(r.rationale)}")
         lines.append(f"  parent_value = {r.parent_value}")
         if r.parent_cq is not None:
             lines.append(f"  parent_cq    = {r.parent_cq}")
@@ -132,14 +132,41 @@ def _count_by_source_type(fields: dict) -> dict[str, int]:
     return counts
 
 
+def _truncate_rationale(text: str, limit: int = 160) -> str:
+    """Truncate *text* to at most *limit* chars on a word boundary.
+
+    If no truncation is needed the original string is returned unchanged.
+    If there is no whitespace within the first *limit* chars the text is hard-
+    cut at *limit* (avoids returning an empty string).
+    """
+    if len(text) <= limit:
+        return text
+    idx = text.rfind(" ", 0, limit)
+    cut = idx if idx > 0 else limit
+    return text[:cut] + "…"
+
+
 def _iteration_outcome(iters) -> tuple[str, str]:
-    """Returns (color_key, label)."""
+    """Returns (color_key, label).
+
+    Five states:
+      DISABLED       — iteration was never enabled for this run
+      CONVERGED      — loop exited with converged=True
+      DIAGNOSE_REQUIRED — loop exited with diagnosis_required=True
+      CAP_REACHED    — loop exhausted max iterations without converging
+      NOT_REACHED    — enabled but no iterations actually completed yet
+      PENDING        — enabled, some iterations done but no terminal flag set
+    """
+    if not iters.enabled:
+        return "reset", "DISABLED"
     if iters.converged:
         return "ok", "CONVERGED"
     if iters.diagnosis_required:
         return "unreachable", "DIAGNOSE_REQUIRED"
     if iters.cap_reached:
         return "fail", "CAP_REACHED"
+    if iters.iterations_completed == 0:
+        return "reset", "NOT_REACHED"
     return "reset", "PENDING"
 
 

@@ -75,10 +75,22 @@ async def start_run(payload: dict):
     mode = payload.get("mode")
     enable_iteration: bool = bool(payload.get("enable_iteration", False))
     demo_paper = (payload.get("demo_paper") or "").strip() or None
-    if not user_input:
-        raise HTTPException(400, "Missing 'input'")
+
+    # P0.3 — reject trivially-short input unless a demo cache is being used.
+    if demo_paper is None and len(user_input) < 8:
+        return JSONResponse(
+            status_code=400,
+            content={"error":
+                f"'input' must be a non-trivial paper title/DOI/URL"
+                f" (got: {user_input!r})"},
+        )
+    if not demo_paper and not user_input:
+        return JSONResponse(status_code=400, content={"error": "Missing 'input'"})
     if mode not in ("wet_lab", "dry_lab"):
-        raise HTTPException(400, "'mode' must be 'wet_lab' or 'dry_lab'")
+        return JSONResponse(
+            status_code=400,
+            content={"error": "'mode' must be 'wet_lab' or 'dry_lab'"},
+        )
 
     task_id = str(uuid.uuid4())[:8]
     protocol_path: str | None = None

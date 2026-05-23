@@ -58,6 +58,16 @@ def main():
     )
     args = parser.parse_args()
 
+    # P0.3 — reject empty / trivially-short input when not using a demo cache.
+    if args.demo_paper is None:
+        if len(args.input.strip()) < 8:
+            print(
+                f"[cli] error: --input must be a non-trivial paper title/DOI/URL"
+                f" (got: {args.input!r})",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
     task_id = str(uuid.uuid4())[:8]
     print(f"[cli] task_id={task_id}  mode={args.mode}")
     print(f"[cli] input: {args.input}")
@@ -67,6 +77,24 @@ def main():
         if isinstance(event, dict):
             phase = event.get("phase", "?")
             etype = event.get("type", "")
+
+            # P1.6 — iteration events get a payload-rich format instead of the
+            # generic "starting / success" lines that would be meaningless.
+            if phase == "iteration":
+                if etype == "phase_start":
+                    idx = event.get("iteration_index", "?")
+                    print(f"[cli] iteration {idx}: starting  (oracle reading + replanner)")
+                elif etype == "phase_end":
+                    idx = event.get("iteration_index", "?")
+                    cq = event.get("cq")
+                    regime = event.get("regime", "?")
+                    action = event.get("action", "?")
+                    cq_str = f"cq={cq}" if cq is not None else "cq=none"
+                    print(f"[cli] iteration {idx}: {event.get('status', '?')} — {cq_str} regime={regime} action={action}")
+                else:
+                    print(f"[cli] {event}")
+                return
+
             if etype == "phase_start":
                 print(f"[cli] {phase}: starting")
             elif etype == "phase_end":
@@ -147,12 +175,46 @@ def main():
             targets = (
                 list(fields.keys()) if args.trace_all_fields else [args.trace_field]
             )
+            # Build a quick lookup of step_number -> step dict for P0.4.
+            steps_by_number: dict[int, dict] = {
+                step["step_number"]: step
+                for step in proto.get("sequential_steps", [])
+            }
+
             for t in targets:
                 if t in fields:
                     print(f"── {t} ──")
                     print(render_lineage_tree(fields[t]))
                     print()
+                    continue
+
+                # P0.4 — three-state field diagnosis.
+                parts = t.split(".", 1)
+                if (
+                    len(parts) == 2
+                    and parts[0].startswith("step_")
+                    and parts[0][len("step_"):].isdigit()
+                ):
+                    step_num = int(parts[0][len("step_"):])
+                    field_name = parts[1]
+                    if step_num not in steps_by_number:
+                        print(
+                            f"[cli] field not in protocol: {t}"
+                            f" (step {step_num} does not exist in this protocol)"
+                        )
+                    elif field_name not in steps_by_number[step_num]:
+                        print(
+                            f"[cli] field not in protocol: {t}"
+                            f" (step {step_num} exists but has no '{field_name}' attribute)"
+                        )
+                    else:
+                        print(
+                            f"[cli] field has no lineage record: {t}"
+                            f" (field present, no FieldLineage attached"
+                            f" — likely a demo-cache field or pre-lineage protocol)"
+                        )
                 else:
+                    # Unparseable key format — fall back to generic message.
                     print(f"[cli] field not found: {t}")
 
     sys.exit(exit_code)

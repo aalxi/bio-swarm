@@ -285,10 +285,21 @@
       `Fields with lineage: ${Object.keys(fields).length}`));
     summary.appendChild(elCreate("div", "lineage-summary-row",
       `paper_span:${counts.paper_span} · enricher_fill:${counts.enricher_fill} · oracle_reading:${counts.oracle_reading} · replanner_revision:${counts.replanner_revision}`));
-    let outcome = "PENDING";
-    if (iters && iters.converged) outcome = "CONVERGED";
-    else if (iters && iters.diagnosis_required) outcome = "DIAGNOSE_REQUIRED";
-    else if (iters && iters.cap_reached) outcome = "CAP_REACHED";
+    // P0.5 — mirror the five-state logic from tools/lineage_renderer.py.
+    let outcome;
+    if (!iters || !iters.enabled) {
+      outcome = "DISABLED";
+    } else if (iters.converged) {
+      outcome = "CONVERGED";
+    } else if (iters.diagnosis_required) {
+      outcome = "DIAGNOSE_REQUIRED";
+    } else if (iters.cap_reached) {
+      outcome = "CAP_REACHED";
+    } else if (!iters.iterations_completed) {
+      outcome = "NOT_REACHED";
+    } else {
+      outcome = "PENDING";
+    }
     summary.appendChild(elCreate("div", "lineage-summary-row",
       `Iteration outcome: ${outcome} in ${(iters && iters.iterations_completed) || 0} iterations`));
     target.appendChild(summary);
@@ -393,7 +404,12 @@
     runBtn.textContent = "Running...";
     pipelineEl.innerHTML = "";
     resultEl.hidden = true;
-    currentIterationsState = { iterations_completed: 0 };
+    // P0.5 — seed enabled from the payload so renderAggregate can distinguish
+    // "disabled" from "not yet reached."
+    currentIterationsState = {
+      iterations_completed: 0,
+      enabled: !!payload.enable_iteration,
+    };
 
     let res;
     try {
