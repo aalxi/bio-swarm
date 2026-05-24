@@ -82,14 +82,30 @@ You MUST return ONLY valid JSON with these exact fields and types:
   "sequential_steps": [              // ordered list of protocol steps
     {
       "step_number": int,
-      "action": "transfer" | "distribute" | "consolidate" | "mix" | "incubate" | "centrifuge" | "aspirate" | "dispense",
+      "action": one of:
+        // Standard liquid-handling — for steps the OT-2 actually executes
+        "transfer" | "distribute" | "consolidate" | "mix"
+        | "incubate" | "centrifuge" | "aspirate" | "dispense"
+        // Out-of-scope categories — for steps the OT-2 CANNOT execute.
+        // Use these instead of forcing a fake "transfer" with placeholder wells.
+        | "out_of_scope_setup"       // cell prep, sample staging, off-deck prep
+        | "out_of_scope_qc"          // Bioanalyzer, Qubit, Tapestation, Nanodrop, gel
+        | "off_deck_instrument"      // FACS sorter, plate reader, separate thermocycler
+        | "manual_only",             // hammering tubes, manual UV exposure, bench chemistry
       "volume_ul": float or null,
       "source_location": string or null,       // e.g. "A1"
       "destination_location": string or null,
       "duration_seconds": int or null,         // for incubate/centrifuge
       "speed_rpm": int or null,                // for centrifuge
       "temperature_celsius": float or null,    // for incubate
-      "notes": string or null                  // ambiguities from the paper
+      "notes": string or null,                 // ambiguities from the paper
+      "applies_to_wells":               // per-well parallelism scope
+        "A1_only"                       // single-well operation (rare; only pilot reactions)
+        | "row"                         // all wells in the first row
+        | "column"                      // all wells in the first column
+        | "plate"                       // DEFAULT — applies to every well in the plate
+        | "custom",                     // explicit subset; populate custom_wells
+      "custom_wells": [string] or null  // ONLY when applies_to_wells == "custom"
     }
   ],
   "extraction_notes": [string]       // list of notes about missing or ambiguous fields
@@ -98,7 +114,16 @@ You MUST return ONLY valid JSON with these exact fields and types:
 CRITICAL RULES:
 - If a value is ambiguous or not stated in the source material, set it to null and add an explanation to extraction_notes[].
 - Do NOT hallucinate or invent scientific values. Only use data present in the source.
-- Every step must have a valid "action" from the allowed list.
+- Every step must have a valid "action" from the allowed list above.
+- DEFAULT applies_to_wells TO "plate". Most steps in a real protocol parallelize across
+  all 96 wells of the plate. Use "A1_only" ONLY when the paper explicitly describes a
+  single-well operation (e.g. a pilot reaction). Smart-seq3-class protocols that
+  process 96 cells in parallel MUST have applies_to_wells="plate" on the per-cell steps.
+- NEVER emit a "transfer"/"distribute"/"mix"/etc. for a step the OT-2 cannot execute.
+  FACS sorting, Bioanalyzer/Qubit QC, manual sample prep, and off-deck thermocycler
+  steps MUST use the appropriate out_of_scope_* / off_deck_instrument / manual_only
+  action. Do NOT fabricate source/destination wells for these — set volume_ul and
+  source/destination_location to null and put the description in notes.
 - Return ONLY the JSON object, no other text.
 """
 
