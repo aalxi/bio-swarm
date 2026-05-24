@@ -21,6 +21,37 @@ from schemas.dry_lab_schema import ReproducibilityTarget
 from schemas.opentrons_schema import OpentronsProtocol
 from tools import daytona_tool
 from tools.file_tool import load_json, save_json, save_text
+from tools.opentrons_api_index import CONTEXT_METHODS, VALID_MODULE_LOAD_NAMES
+
+
+def _opentrons_api_block() -> str:
+    """Render an 'ALLOWED API' block for injection into LLM system prompts.
+
+    P2.2 — the May-04 post-mortem flagged `thermocycler_module_gen2` and
+    `wait_for_block_temperature` as Coder hallucinations. Grounding the
+    prompts on the real Opentrons API surface closes that class of bug.
+    Inlines a curated subset (the 7 contexts most relevant to codegen);
+    the full set is in tools/opentrons_api_index.py.
+    """
+    lines: list[str] = ["ALLOWED OPENTRONS API (use ONLY these method names):"]
+    for ctx in (
+        "ProtocolContext", "InstrumentContext", "Labware",
+        "ThermocyclerContext", "MagneticModuleContext",
+        "TemperatureModuleContext", "HeaterShakerContext",
+    ):
+        methods = CONTEXT_METHODS.get(ctx, [])
+        if not methods:
+            continue
+        lines.append(f"  {ctx}: {', '.join(methods)}")
+    lines.append("")
+    lines.append(
+        f"VALID protocol.load_module() names (use spaces, NOT underscores): "
+        f"{', '.join(VALID_MODULE_LOAD_NAMES)}"
+    )
+    return "\n".join(lines)
+
+
+_API_BLOCK = _opentrons_api_block()
 
 try:
     import yaml as _yaml  # pyyaml — required for env.yml translation (Layer 2 A5)
@@ -373,10 +404,12 @@ def _check_dry_lab_fabricated_success(
         "directory_outputs_populated": directory_outputs_populated,
     }
 
-WET_LAB_CODEGEN_SYSTEM_PROMPT = """\
+_WET_LAB_CODEGEN_PREAMBLE = """\
 You are an Opentrons OT-2 protocol author. You receive a JSON protocol definition
 and must output a complete, runnable Opentrons Python protocol using API v2.
+"""
 
+WET_LAB_CODEGEN_SYSTEM_PROMPT = _WET_LAB_CODEGEN_PREAMBLE + "\n" + _API_BLOCK + "\n\n" + """\
 You MUST respond with ONLY valid JSON containing exactly TWO keys:
 {
   "script": "<full Python source as a single string, with \\n for newlines>",
@@ -423,9 +456,11 @@ Code requirements:
   silently degrade the metric to a less accurate fallback.
 """
 
-WET_LAB_FIX_SYSTEM_PROMPT = """\
+_WET_LAB_FIX_PREAMBLE = """\
 You are fixing an Opentrons OT-2 Python protocol that failed opentrons_simulate.
+"""
 
+WET_LAB_FIX_SYSTEM_PROMPT = _WET_LAB_FIX_PREAMBLE + "\n" + _API_BLOCK + "\n\n" + """\
 Return ONLY valid JSON with exactly TWO keys:
 {
   "script": "<complete fixed Python source as a single string>",
