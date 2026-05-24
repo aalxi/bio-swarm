@@ -226,17 +226,11 @@ def _yml_to_pip_requirements(yml_text: str) -> tuple[list[str], list[str]]:
     return translatable, untranslatable
 
 
-# ── Layer 2: expected_outputs classifier ─────────────────────────────────────
-# Test 4 (Riboformer) tried to download "Fig 2b" as a file path. Classifier
-# routes only file-shaped entries to the download loop; paper deliverables
-# and GEO accessions are surfaced separately in the report.
-_GEO_RE = re.compile(r"^GS[EM]\d{3,}$", re.IGNORECASE)
-_FIG_RE = re.compile(
-    r"^(Fig(?:ure)?|Table|Supplementary|Suppl|Extended Data|Source Data)\b",
-    re.IGNORECASE,
-)
-_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
-_FILE_RE = re.compile(r"^[\w./\- ]+\.[A-Za-z0-9]{1,8}$")
+# Note: the old expected_outputs classifier (_URL_RE, _GEO_RE, _FIG_RE,
+# _FILE_RE, _classify_expected_output) used to live here. P2.5 moved the
+# canonical classifier to schemas.dry_lab_schema.classify_expected_output —
+# the category now travels with each ExpectedOutput entry from Methodology
+# through to Coder, so no re-classification at consume time.
 
 
 # ── Torch-strip helpers (P1.5) ───────────────────────────────────────────────
@@ -317,26 +311,39 @@ def _strip_torch_from_env_file(text: str, filename: str) -> tuple[str, int]:
     return "".join(out), changed
 
 
-def _classify_expected_output(entry: str) -> str:
-    """Returns one of: file_path, directory_path, paper_deliverable,
-                       geo_accession, url, unresolved."""
-    s = (entry or "").strip()
-    if not s:
-        return "unresolved"
-    if _URL_RE.match(s):
-        return "url"
-    if _GEO_RE.match(s):
-        return "geo_accession"
-    if _FIG_RE.match(s):
-        return "paper_deliverable"
-    if _FILE_RE.match(s):
-        return "file_path"
-    if s.startswith(("/", "./", "../")) and "." in s.rsplit("/", 1)[-1]:
-        return "file_path"
-    if "/" in s and not s.endswith((".", "?")):
-        # results/, figures/, checkpoints/output
-        return "directory_path"
-    return "unresolved"
+def _partition_expected_outputs(entries) -> tuple[list[dict], list[dict]]:
+    """P2.5 — split typed expected_outputs into (downloadable, paper_only).
+
+    Downloadable: category in {file_path, directory_path, url}. Coder
+    attempts to fetch or list these from the repo / external URL.
+    Paper-only: category in {paper_deliverable, geo_accession, unresolved}.
+    Recorded in the run log but never auto-downloaded — they are reviewer-
+    facing claims, not artifacts.
+
+    Accepts ExpectedOutput pydantic objects, plain dicts, or — defensively
+    — pre-typed strings (which become unresolved/paper_only). The May-04
+    Riboformer failure (downloading "Fig 2b" as a file) is impossible now
+    because the category lives on the entry, not in a re-inferred heuristic.
+    """
+    downloadable: list[dict] = []
+    paper_only: list[dict] = []
+    DOWNLOADABLE = {"file_path", "directory_path", "url"}
+    for e in entries or []:
+        if hasattr(e, "model_dump"):           # Pydantic ExpectedOutput
+            d = e.model_dump()
+        elif isinstance(e, dict):
+            d = dict(e)
+            d.setdefault("category", "unresolved")
+        else:
+            # Defensive: a stray string in the list (shouldn't happen post-
+            # validator) gets bucketed safely without an exception.
+            d = {"label": str(e), "category": "unresolved"}
+        cat = d.get("category", "unresolved")
+        if cat in DOWNLOADABLE:
+            downloadable.append(d)
+        else:
+            paper_only.append(d)
+    return downloadable, paper_only
 
 
 def _check_dry_lab_fabricated_success(
@@ -1769,30 +1776,48 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
 
         output_files.append(log_path)
 
-        # ── Classify expected outputs (Layer 2) ───────────────────────────
-        # Test 4 (Riboformer) tried to download "Fig 2b" as a file path. Only
-        # file_path entries are downloadable on-disk artifacts. paper_deliverable,
-        # geo_accession, url, unresolved are surfaced in the report verbatim
-        # but never attempted as downloads.
+        # ── Partition expected outputs (P2.5 — type comes from the schema) ─
+        # Test 4 (Riboformer) tried to download "Fig 2b" as a file path. The
+        # category is now carried on each ExpectedOutput; Coder partitions
+        # and only attempts downloads for the downloadable bucket.
+        downloadable, paper_only = _partition_expected_outputs(target.expected_outputs)
+        # Keep the legacy `expected_outputs_classified` shape so existing
+        # downstream consumers (synthesizer report templates,
+        # _check_dry_lab_fabricated_success) keep working — populate it from
+        # the typed entries instead of re-classifying.
         classified: dict[str, list[str]] = {
             "file_path": [], "directory_path": [], "paper_deliverable": [],
             "geo_accession": [], "url": [], "unresolved": [],
         }
-        for rel in target.expected_outputs:
-            classified[_classify_expected_output(rel)].append((rel or "").strip())
+        for e in (*downloadable, *paper_only):
+            cat = e.get("category", "unresolved")
+            label = (e.get("label") or "").strip()
+            if label:
+                classified.setdefault(cat, []).append(label)
         run_log["expected_outputs_classified"] = classified
         _log(
-            "Expected-output classification: "
+            "Expected-output partitioning: "
+            f"{len(downloadable)} downloadable, {len(paper_only)} paper-only "
+            + "("
             + ", ".join(f"{k}={len(v)}" for k, v in classified.items() if v)
+            + ")"
         )
 
-        # ── Download expected outputs (file_path only) ────────────────────
+        # ── Download expected outputs (file_path/directory_path/url only) ─
         expected_found: list[str] = []
         expected_missing: list[str] = []
-        for rel in classified["file_path"]:
-            rel_clean = rel.lstrip("/")
-            if not rel_clean:
+        for entry in downloadable:
+            cat = entry.get("category")
+            label = (entry.get("label") or "").strip()
+            if not label:
                 continue
+            # We only attempt actual sandbox downloads for file_path entries.
+            # directory_path entries are listed-but-not-downloaded; url entries
+            # are recorded for reviewer reference (we don't pull external URLs
+            # to keep dry-lab runs deterministic).
+            if cat != "file_path":
+                continue
+            rel_clean = label.lstrip("/")
             remote_path = f"/home/daytona/repo/{rel_clean}"
             _log(f"Downloading expected output: {remote_path}")
             try:
@@ -1815,7 +1840,12 @@ def _dry_lab_flow(task_id: str) -> dict[str, Any]:
                     {"path": remote_path, "error": str(ex)}
                 )
 
-        run_log["expected_outputs"] = list(target.expected_outputs)
+        # Persist the typed entries (as dicts, JSON-serializable) alongside
+        # the legacy `expected_outputs_classified` block.
+        run_log["expected_outputs"] = [
+            e.model_dump() if hasattr(e, "model_dump") else dict(e)
+            for e in target.expected_outputs
+        ]
         run_log["expected_outputs_found"] = expected_found
         run_log["expected_outputs_missing"] = expected_missing
 
