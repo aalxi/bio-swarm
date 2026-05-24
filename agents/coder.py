@@ -454,6 +454,28 @@ Code requirements:
   SKIPPED steps. Do not omit, abbreviate, or rename it. A downstream tool counts
   liquid-handling calls per marker region to score per-step coverage; missing markers
   silently degrade the metric to a less accurate fallback.
+
+PER-WELL PARALLELISM — read step.applies_to_wells before emitting any pipetting call:
+- "plate" (DEFAULT): emit a for-loop over plate.wells(). Example:
+      # STEP 3
+      for dest_well in sample_plate.wells():
+          p20.pick_up_tip()
+          p20.transfer(volume_ul, source.wells()[0], dest_well, new_tip="never")
+          p20.drop_tip()
+- "A1_only": single-well operation; no loop. Use the literal source/destination
+  from the JSON.
+- "row": loop over plate.rows()[0] (the first row, A1..A12).
+- "column": loop over plate.columns()[0] (the first column, A1..H1).
+- "custom": loop over step.custom_wells (a list[str] of well names).
+
+OUT-OF-SCOPE ACTIONS — for step.action in
+{out_of_scope_setup, out_of_scope_qc, off_deck_instrument, manual_only},
+emit ONLY a protocol.comment() call describing the step. Example:
+    # STEP 5
+    protocol.comment("out_of_scope (off_deck_instrument): FACS-sort single cells into 96-well plate; performed off-deck before this protocol runs.")
+DO NOT load any module or labware specifically for an OOS step. DO NOT emit
+any pipette transfer/distribute/mix/etc. for an OOS step — that is the
+category error these tags exist to prevent.
 """
 
 _WET_LAB_FIX_PREAMBLE = """\
@@ -605,7 +627,10 @@ def _count_skipped_markers(script: str) -> int:
 _STEP_MARKER_RE = re.compile(r"^\s*#\s*STEP\s+(\d+)\b", re.MULTILINE)
 
 
-def _compute_step_coverage(script: str, total_steps: int) -> tuple[float, list[int], str]:
+def _compute_step_coverage(
+    script: str, total_steps: int,
+    oos_step_numbers: list[int] | None = None,
+) -> tuple[float, list[int], str]:
     """Return (coverage_ratio, skipped_step_numbers, method).
 
     method == "markers" when the script contained `# STEP N` markers and we could
@@ -613,16 +638,22 @@ def _compute_step_coverage(script: str, total_steps: int) -> tuple[float, list[i
     method == "heuristic_fallback" when no markers were present and we fell back to
     distinct-call-count / total_steps. The fallback is intentionally tagged so the
     caller can surface "metric is approximate" in the report — see B6 fidelity warnings.
+
+    oos_step_numbers (P2.4): step numbers known to be out-of-scope (FACS,
+    Bioanalyzer, manual prep, etc.). Excluded from the denominator AND not
+    flagged as skipped — emitting only a protocol.comment() is the correct
+    behavior for these steps. Defaults to None (no OOS, back-compat).
     """
+    oos = set(oos_step_numbers or [])
     if total_steps <= 0:
         return 0.0, [], "markers"
 
     matches = list(_STEP_MARKER_RE.finditer(script))
     if not matches:
-        # Heuristic fallback: distinct liquid-handling calls / total steps.
+        # Heuristic fallback: distinct liquid-handling calls / in-scope steps.
         distinct_calls = _count_liquid_handling_calls(script)
-        ratio = min(distinct_calls / total_steps, 1.0)
-        # We don't know which step numbers were skipped under the heuristic.
+        in_scope_total = max(total_steps - len(oos), 1)
+        ratio = min(distinct_calls / in_scope_total, 1.0)
         return ratio, [], "heuristic_fallback"
 
     # Bucket each liquid-handling call into the step region that contains it.
@@ -640,8 +671,11 @@ def _compute_step_coverage(script: str, total_steps: int) -> tuple[float, list[i
             active_steps.add(step_n)
 
     declared_steps = {step_n for step_n, _, _ in regions}
-    skipped = sorted(declared_steps - active_steps)
-    ratio = len(active_steps) / total_steps
+    in_scope_declared = declared_steps - oos
+    # Skipped = in-scope steps that should have emitted LH calls but didn't.
+    skipped = sorted(in_scope_declared - active_steps)
+    denominator = max(len(in_scope_declared), 1)
+    ratio = len(active_steps & in_scope_declared) / denominator
     return ratio, skipped, "markers"
 
 
@@ -740,6 +774,17 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
         )
 
     out_path = f"workspace/generated_code/protocol_{task_id}.py"
+    # P2.4 — collect out-of-scope step numbers up front so every coverage
+    # calculation below uses the right denominator.
+    _OOS_ACTIONS = {
+        "out_of_scope_setup", "out_of_scope_qc",
+        "off_deck_instrument", "manual_only",
+    }
+    oos_step_numbers = [
+        s.get("step_number")
+        for s in (raw_protocol.get("sequential_steps") or [])
+        if s.get("action") in _OOS_ACTIONS and s.get("step_number") is not None
+    ]
     internal_retries = 0
     # noop_retries tracks silent-no-op regen attempts (separate budget from sim-error retries).
     # Capped at 2: a fresh _generate_opentrons_script call is cheap but not free.
@@ -804,7 +849,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
             save_text(last_sim_out, attempt_stderr_path)
             attempt_lh_calls = _count_liquid_handling_calls(script)
             attempt_coverage, attempt_skipped_steps, attempt_method = _compute_step_coverage(
-                script, total_steps
+                script, total_steps, oos_step_numbers=oos_step_numbers,
             )
             attempts_log.append({
                 "attempt": attempt_n,
@@ -824,7 +869,7 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                 lh_calls = _count_liquid_handling_calls(script)
                 skipped = _count_skipped_markers(script)
                 coverage, skipped_step_numbers, coverage_method = _compute_step_coverage(
-                    script, total_steps
+                    script, total_steps, oos_step_numbers=oos_step_numbers,
                 )
                 low_coverage = coverage < LIQUID_COVERAGE_THRESHOLD
                 heuristic_used = coverage_method == "heuristic_fallback"
