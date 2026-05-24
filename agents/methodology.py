@@ -141,7 +141,19 @@ You MUST return ONLY valid JSON with these exact fields and types:
   "requirements_file": string or null,  // full contents of requirements.txt or environment.yml
   "data_download_urls": [string],       // URLs for datasets needed to reproduce
   "main_script": string or null,        // entry point filename (e.g. "main.py", "run.sh")
-  "expected_outputs": [string],         // figures, tables, or results the paper claims to produce
+  "expected_outputs": [                 // TYPED — each entry is an object, NOT a free-text string
+    {
+      "label": string,                  // exact text from the paper or repo, e.g. "Figure 4: scGPT gene expression prediction"
+      "category": one of:               // categorize what KIND of artifact this is
+        "file_path"                     // path-like, e.g. "results/figure_4.png", "checkpoints/model.pt"
+        | "directory_path"              // a directory, e.g. "checkpoints/", "results/"
+        | "paper_deliverable"           // a figure number, table number, or descriptive deliverable name
+                                        // ("A foundation model for single-cell multi-omics")
+        | "geo_accession"               // GSE/GSM/E-MTAB-* style accession id
+        | "url"                         // external URL (Zenodo, Figshare, ArXiv)
+        | "unresolved"                  // when none of the above clearly applies
+    }
+  ],
   "extraction_notes": [string]          // notes about missing or ambiguous fields
 }
 
@@ -149,6 +161,7 @@ CRITICAL RULES:
 - If a value is ambiguous or not found in the source material, set it to null and add an explanation to extraction_notes[].
 - Do NOT hallucinate or invent values. Only use data present in the source.
 - For github_url: extract any URLs that point to github.com found in the research data. If the paper mentions a software tool/package name (e.g. "SCANPY", "DeepChem", "Cellpose"), look for github.com/<author>/<package-name> patterns in the research content. If no github link is found in the source, set to null and note it in extraction_notes.
+- For expected_outputs: ALWAYS emit each entry as an object with both "label" and "category" keys. NEVER emit a free-text string here. Categorize honestly: a paper figure caption like "Figure 4" is "paper_deliverable", not "file_path". A literal repo path like "results/figure_4.png" is "file_path". This typing is load-bearing — downstream code partitions by category, so a wrong category causes the system to try to download a paper figure as if it were a file.
 - Return ONLY the JSON object, no other text.
 """
 
