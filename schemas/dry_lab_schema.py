@@ -1,6 +1,7 @@
+import re
 from urllib.parse import urlparse
 from pydantic import BaseModel, field_validator
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 # Bare service name tokens that are not real URLs
 _BARE_SERVICE_NAMES = frozenset({
@@ -77,6 +78,60 @@ def _filter_placeholder_github_url(url: Optional[str]) -> Optional[str]:
     return kept[0] if kept else None
 
 
+# ── P2.5 typed expected_outputs ──────────────────────────────────────────────
+#
+# Background: the May-04 scGPT smoke test had Coder trying to download "Fig 2b"
+# as a file path because expected_outputs was List[str]. Each entry is now a
+# typed (label, category) pair so the Coder can partition correctly without
+# guessing.
+
+_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+_GEO_RE = re.compile(r"^(GSE\d+|GSM\d+|E-[A-Z]+-\d+)$", re.IGNORECASE)
+_FIG_RE = re.compile(r"^(Figure|Fig|Table|Supplementary)\b", re.IGNORECASE)
+_FILE_RE = re.compile(r"^[\w./\- ]+\.[A-Za-z0-9]{1,8}$")
+
+
+def classify_expected_output(label: str) -> str:
+    """Categorize a free-text expected_outputs entry into one of:
+    file_path, directory_path, paper_deliverable, geo_accession, url, unresolved.
+
+    Heuristic ordering matters: URL → GEO accession → figure/table caption →
+    explicit file path → directory path → free-text description (likely
+    paper-level claim) → unresolved.
+    """
+    s = (label or "").strip()
+    if not s:
+        return "unresolved"
+    if _URL_RE.match(s):
+        return "url"
+    if _GEO_RE.match(s):
+        return "geo_accession"
+    if _FIG_RE.match(s):
+        return "paper_deliverable"
+    if _FILE_RE.match(s):
+        return "file_path"
+    if s.startswith(("/", "./", "../")) and "." in s.rsplit("/", 1)[-1]:
+        return "file_path"
+    if "/" in s and not s.endswith((".", "?")):
+        return "directory_path"
+    # Free-text descriptions like "A foundation model for single-cell biology"
+    # — paper-level claim, not an artifact path.
+    if " " in s and len(s) > 10:
+        return "paper_deliverable"
+    return "unresolved"
+
+
+class ExpectedOutput(BaseModel):
+    """A typed expected output: the LLM extracts the raw label from the paper,
+    and either it OR our classifier assigns the category. The Coder then
+    partitions on .category and never re-guesses at consume time."""
+    label: str
+    category: Literal[
+        "file_path", "directory_path", "paper_deliverable",
+        "geo_accession", "url", "unresolved",
+    ] = "unresolved"
+
+
 class ReproducibilityTarget(BaseModel):
     paper_title: str
     paper_source: str
@@ -84,7 +139,7 @@ class ReproducibilityTarget(BaseModel):
     requirements_file: Optional[str] = None
     data_download_urls: List[str] = []
     main_script: Optional[str] = None
-    expected_outputs: List[str] = []
+    expected_outputs: List[ExpectedOutput] = []
     extraction_notes: List[str] = []
 
     @field_validator("data_download_urls", mode="before")
@@ -101,3 +156,33 @@ class ReproducibilityTarget(BaseModel):
         if v is None:
             return None
         return _filter_placeholder_github_url(str(v))
+
+    @field_validator("expected_outputs", mode="before")
+    @classmethod
+    def _normalize_expected_outputs(cls, v):
+        """Accept legacy List[str] or new List[ExpectedOutput-shaped dict].
+        Each string is auto-classified; each dict missing 'category' gets
+        it auto-classified from the label. The validator is intentionally
+        permissive so on-disk protocols written before this change still load.
+        """
+        if not isinstance(v, list):
+            return v
+        out = []
+        for entry in v:
+            if isinstance(entry, str):
+                out.append({
+                    "label": entry,
+                    "category": classify_expected_output(entry),
+                })
+            elif isinstance(entry, dict):
+                if "category" not in entry and "label" in entry:
+                    entry = {
+                        **entry,
+                        "category": classify_expected_output(entry["label"]),
+                    }
+                out.append(entry)
+            else:
+                # Already-instantiated ExpectedOutput or unknown type;
+                # let Pydantic decide.
+                out.append(entry)
+        return out
