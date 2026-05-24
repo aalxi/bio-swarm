@@ -461,14 +461,16 @@ You are fixing an Opentrons OT-2 Python protocol that failed opentrons_simulate.
 """
 
 WET_LAB_FIX_SYSTEM_PROMPT = _WET_LAB_FIX_PREAMBLE + "\n" + _API_BLOCK + "\n\n" + """\
-Return ONLY valid JSON with exactly TWO keys:
+Return ONLY valid JSON with exactly THREE keys:
 {
   "script": "<complete fixed Python source as a single string>",
   "labware_substitutions": [
     {"original": "<name from protocol JSON>", "substituted": "<actual Opentrons name used>", "reason": "<one-line explanation>"}
-  ]
+  ],
+  "new_constraint": "<one-sentence rule that, if applied to the original script, would have prevented THIS error. Be specific (name the API method, the labware, the lid state, etc.). Examples: 'Always call thermocycler.open_lid() before any pipette move into a Thermocycler-mounted plate.' / 'Never pass None as the volume to .transfer(); guard with a null check.' / 'Use space-separated module load names like \\\"thermocycler module gen2\\\", never underscores.'>"
 }
 If no substitutions were made or the substitutions are unchanged from before, return "labware_substitutions": [].
+If no new lesson can be drawn (rare; the error class is already covered by LEARNED CONSTRAINTS at the top of the user message), return "new_constraint": "".
 Do NOT include protocol.comment() calls about substitutions — return them in the JSON key instead.
 
 Requirements:
@@ -650,16 +652,48 @@ def _generate_opentrons_script(protocol: dict[str, Any]) -> tuple[str, list[dict
     return _extract_script(data), _extract_substitutions(data)
 
 
-def _fix_opentrons_script(original_script: str, sim_stdout: str) -> tuple[str, list[dict]]:
-    """Return (fixed_script_str, labware_substitutions_list)."""
-    user = (
+def _build_fix_user_payload(
+    original_script: str,
+    sim_stdout: str,
+    learned_constraints: list[str],
+) -> str:
+    """Build the user-message body for a wet-lab fix LLM call.
+
+    P2.1 — accumulated constraints from prior failed attempts are
+    prepended so the LLM doesn't re-discover the same rule each retry.
+    """
+    parts: list[str] = []
+    if learned_constraints:
+        parts.append("LEARNED CONSTRAINTS (apply ALL of these to the fixed script):")
+        for c in learned_constraints:
+            parts.append(f"  - {c}")
+        parts.append("")
+    parts.append(
         "Simulation failed. Below is the error output from opentrons_simulate, "
-        "then the full original script. Fix the script.\n\n"
-        f"--- STDERR/STDOUT ---\n{sim_stdout}\n\n"
-        f"--- ORIGINAL SCRIPT ---\n{original_script}"
+        "then the full original script. Fix the script."
     )
+    parts.append("")
+    parts.append(f"--- STDERR/STDOUT ---\n{sim_stdout}")
+    parts.append(f"--- ORIGINAL SCRIPT ---\n{original_script}")
+    return "\n".join(parts)
+
+
+def _fix_opentrons_script_v2(
+    original_script: str,
+    sim_stdout: str,
+    learned_constraints: list[str],
+) -> tuple[str, list[dict], str]:
+    """Return (fixed_script, labware_substitutions, new_constraint).
+
+    new_constraint is a one-sentence natural-language rule the LLM emits
+    describing what it learned from THIS error class. It gets appended
+    to learned_constraints for the next attempt. Empty string when the
+    LLM omits the key (back-compat, treated as no new lesson).
+    """
+    user = _build_fix_user_payload(original_script, sim_stdout, learned_constraints)
     data = _llm_json(WET_LAB_FIX_SYSTEM_PROMPT, user)
-    return _extract_script(data), _extract_substitutions(data)
+    new_constraint = (data.get("new_constraint") or "").strip()
+    return _extract_script(data), _extract_substitutions(data), new_constraint
 
 
 def _wet_lab_flow(task_id: str) -> dict[str, Any]:
@@ -713,6 +747,9 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
     NOOP_MAX_RETRIES = 2
     last_sim_out = ""
     attempts_log: list[dict] = []
+    # P2.1 — accumulated natural-language rules learned across fix attempts.
+    # Each retry prepends ALL of these to the fix LLM prompt.
+    learned_constraints: list[str] = []
     total_steps = len(raw_protocol.get("sequential_steps") or [])
 
     global _stage_start
@@ -778,6 +815,9 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                 "liquid_handling_calls": attempt_lh_calls,
                 "liquid_step_coverage": attempt_coverage,
                 "coverage_method": attempt_method,
+                # P2.1 — snapshot the constraints carried INTO this attempt
+                # (i.e. learned before this attempt started)
+                "learned_constraints_so_far": list(learned_constraints),
             })
 
             if sim["success"]:
@@ -885,14 +925,28 @@ def _wet_lab_flow(task_id: str) -> dict[str, Any]:
                 last_sim_out[:500],
             )
             _log(f"Requesting LLM fix (retry {internal_retries}/{WET_LAB_MAX_SIM_ATTEMPTS - 1})...")
+            if learned_constraints:
+                _log(
+                    f"  carrying {len(learned_constraints)} learned constraint(s) "
+                    f"into this fix attempt"
+                )
             try:
-                script, fix_subs = _fix_opentrons_script(script, last_sim_out)
+                script, fix_subs, new_constraint = _fix_opentrons_script_v2(
+                    script, last_sim_out, learned_constraints,
+                )
                 # Last attempt's substitutions win; union them across attempts for completeness.
                 if fix_subs:
                     labware_substitutions = fix_subs
+                if new_constraint:
+                    learned_constraints.append(new_constraint)
+                    _log(
+                        f"  learned constraint #{len(learned_constraints)}: "
+                        f"{new_constraint[:120]}"
+                    )
                 logger.info(
-                    "Wet lab fix attempt %s: requested revised full script from LLM",
-                    internal_retries,
+                    "Wet lab fix attempt %s: requested revised full script from LLM "
+                    "(constraints accumulated: %s)",
+                    internal_retries, len(learned_constraints),
                 )
                 _log("LLM fix received, re-uploading...")
             except Exception as e:
