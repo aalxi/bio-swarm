@@ -6,6 +6,7 @@ gene expression prediction" as a file path.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 from pydantic import ValidationError
@@ -69,8 +70,16 @@ def test_target_accepts_legacy_strings_with_auto_classification():
 
 def test_target_loads_old_protocol_805f95c3():
     """The actual on-disk scGPT failure protocol must continue to load
-    after the typing change. This is the regression sentinel."""
-    proto = json.load(open("workspace/extracted_protocols/protocol_805f95c3.json"))
+    after the typing change. This is the regression sentinel.
+
+    The artifact lives under the gitignored workspace/ dir, so it is absent
+    in clean checkouts/CI — skip rather than fail there. The auto-classify
+    behavior it guards is also covered inline by the two tests above.
+    """
+    proto_path = "workspace/extracted_protocols/protocol_805f95c3.json"
+    if not os.path.exists(proto_path):
+        pytest.skip(f"sentinel artifact not present: {proto_path}")
+    proto = json.load(open(proto_path))
     t = ReproducibilityTarget.model_validate(proto)
     assert len(t.expected_outputs) == len(proto["expected_outputs"])
     # The scGPT protocol has multiple free-text paper-deliverable entries
